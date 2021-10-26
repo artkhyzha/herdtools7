@@ -393,9 +393,9 @@ module Make(C:Config) (S:Sem.Semantics) : S with module S = S	=
                 match loc with
                 | A.Location_global (V.Val c as vloc) ->
                    if Constant.is_pt c then
-                     let open PTEVal in
                      match v with
-                     | V.Val (Constant.PteVal {af=0;_}) ->
+                     | V.Val (Constant.PteVal p)
+                           when not (V.Cst.PteVal.is_af p) ->
                         vloc::k
                      | _ -> k
                    else k

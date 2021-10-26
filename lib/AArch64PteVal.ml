@@ -34,44 +34,9 @@ module Attrs = struct
   let of_list l = StringSet.of_list l
 end
 
-type oa_t = PTE of string | PHY of string
-
-let pp_oa_old = function
-| PTE s -> Misc.add_pte s
-| PHY s -> Misc.add_physical s
-
-let pp_oa = function
-| PTE s -> Misc.pp_pte s
-| PHY s -> Misc.pp_physical s
-
-let oa_compare oa1 oa2 = match oa1,oa2 with
-| (PHY s1,PHY s2)
-| (PTE s1,PTE s2)
-  -> String.compare s1 s2
-| PHY _,PTE _ -> -1
-| PTE _,PHY _ -> 1
-
-let oa_eq oa1 oa2 = match oa1,oa2 with
-| (PHY s1,PHY s2)
-| (PTE s1,PTE s2)
-  -> Misc.string_eq s1 s2
-| (PHY _,PTE _)
-| (PTE _,PHY _)
-  -> false
-
-let as_physical = function
-| PHY s -> Some s
-| PTE _ -> None
-
-let as_pte = function
-| PTE s -> Some s
-| PHY _ -> None
-
-let oa_refers_virtual = function
-| PTE s|PHY s -> Some s
 
 type t = {
-  oa : oa_t ;
+  oa : OutputAddress.t;
   valid : int;
   af : int;
   db : int;
@@ -80,28 +45,57 @@ type t = {
   attrs: Attrs.t;
   }
 
+(* Let us abstract... *)
+let is_af {af; _} = af <> 0
+and set_af p = { p with af=1; }
+
+let is_db {db; _} = db <> 0
+and set_db p = { p with db=1; }
+and is_dbm {dbm; _} = dbm <> 0
+
+let is_el0 {el0; _} = el0 <> 0
+
+let is_valid {valid; _} = valid <> 0
+
+let get_oa {oa; _} = oa
+and same_oa {oa=oa1; _} {oa=oa2; _} = OutputAddress.eq oa1 oa2
+
+(* *)
+let writable ha hd p =
+  (p.af <> 0 || ha) && (* access allowed *)
+  (p.db <> 0 || (p.dbm <> 0 && hd)) (* write allowed *)
+
+let get_attrs {attrs;_ } = Attrs.as_list attrs
+
 (* For ordinary tests not to fault, the dirty bit has to be set. *)
-let prot_default =  { oa=PHY ""; valid=1; af=1; db=1; dbm=0; el0=1; attrs=Attrs.default; }
-let default s = { prot_default with  oa=PHY s; }
+
+let prot_default =
+  { oa=OutputAddress.PHY "";
+    valid=1; af=1; db=1; dbm=0; el0=1; attrs=Attrs.default; }
+
+let default s = { prot_default with  oa=OutputAddress.PHY s; }
 
 (* Page table entries for pointers into the page table
    have el0 flag unset. Namely, page table access from
    EL0 is disallowed. This correspond to expected behaviour:
    user code cannot access the page table. *)
-let of_pte s = { prot_default with  oa=PTE s; el0=0; }
+let of_pte s = { prot_default with  oa=OutputAddress.PTE s; el0=0; }
 
 let pp_field ok pp eq ac p k =
   let f = ac p in if not ok && eq f (ac prot_default) then k else pp f::k
 
-let pp_int_field ok name = pp_field ok (sprintf "%s:%i" name) Misc.int_eq
-let pp_valid ok = pp_int_field ok "valid" (fun p -> p.valid)
-and pp_af ok = pp_int_field ok "af" (fun p -> p.af)
-and pp_db ok = pp_int_field ok "db" (fun p -> p.db)
-and pp_dbm ok = pp_int_field ok "dbm" (fun p -> p.dbm)
-and pp_el0 ok = pp_int_field ok "el0" (fun p -> p.el0)
+let pp_int_field hexa ok name =
+  let pp_int = if hexa then sprintf "0x%x" else sprintf "%d" in
+  pp_field ok (fun v -> sprintf "%s:%s" name (pp_int v)) Misc.int_eq
+
+let pp_valid hexa ok = pp_int_field hexa ok "valid" (fun p -> p.valid)
+and pp_af hexa ok = pp_int_field hexa ok "af" (fun p -> p.af)
+and pp_db hexa ok = pp_int_field hexa ok "db" (fun p -> p.db)
+and pp_dbm hexa ok = pp_int_field hexa ok "dbm" (fun p -> p.dbm)
+and pp_el0 hexa ok = pp_int_field hexa ok "el0" (fun p -> p.el0)
 and pp_attrs ok = pp_field ok (fun a -> Attrs.pp a) Attrs.eq (fun p -> p.attrs)
 
-let set_oa p s = { p with oa = PHY s; }
+let set_oa p s = { p with oa = OutputAddress.PHY s; }
 
 let is_default t =
   let d = prot_default in
@@ -114,48 +108,38 @@ let is_default t =
    (1) Fields older than el0 are always printed.
    (2) Fields from el0 (included) are printed if non-default. *)
 
-let do_pp showall old_oa p =
+let do_pp hexa showall old_oa p =
   let k = pp_attrs false p [] in
-  let k = pp_el0 false p k in
-  let k = pp_valid showall p k in
-  let k = pp_dbm showall p k in
-  let k = pp_db showall p k in
-  let k = pp_af showall p k in
-  let k = sprintf "oa:%s" ((if old_oa then pp_oa_old else pp_oa) p.oa)::k  in
+  let k = pp_el0 hexa false p k in
+  let k = pp_valid hexa showall p k in
+  let k = pp_dbm hexa showall p k in
+  let k = pp_db hexa showall p k in
+  let k = pp_af hexa showall p k in
+  let k =
+    sprintf "oa:%s"
+      ((if old_oa then OutputAddress.pp_old
+        else OutputAddress.pp) p.oa)::k  in
   let fs = String.concat ", " k in
   sprintf "(%s)" fs
 
 (* By default pp does not list fields whose value is default *)
-let pp = do_pp false false
+let pp hexa = do_pp hexa false false
 (* For initial values dumped for hashing, pp_hash is different,
    for not altering hashes as much as possible *)
-let pp_hash = do_pp true true
+let pp_v = pp false
+let pp_hash = do_pp false true true
 
 let my_int_of_string s v =
   let v = try int_of_string v with
     _ -> Warn.user_error "PTE field %s should be an integer" s
   in v
 
-type pte_prop =
-  | KV of (string * string)
-  | Attrs of string list
-
-let tr_oa s = match Misc.tr_physical s with
-| Some s -> PHY s
-| None ->
-   begin
-     match Misc.tr_pte s with
-     | Some s -> PTE s
-     | None ->
-        Warn.user_error
-          "identifier %s cannot be used as output address" s
-   end
-
 let do_of_list p l =
+  let open ParsedPteVal in
   let add_field a v = match v with
+    | OA oa -> { a with oa; }
     | KV (s, v) -> begin
         match s with
-        | "oa" -> { a with oa = tr_oa v }
         | "af" -> { a with af = my_int_of_string s v }
         | "db" -> { a with db = my_int_of_string s v }
         | "dbm" -> { a with dbm = my_int_of_string s v }
@@ -164,7 +148,7 @@ let do_of_list p l =
         | _ ->
            Warn.user_error "Illegal PTE property %s" s
       end
-    | Attrs l -> { a with attrs = Attrs.of_list l }
+    | A l -> { a with attrs = Attrs.of_list l }
   in
   let rec of_list a = function
     | [] -> a
@@ -172,8 +156,7 @@ let do_of_list p l =
 
   of_list p l
 
-let of_list s = do_of_list (default s)
-and of_list0 = do_of_list prot_default
+let tr p = do_of_list prot_default p
 
 let lex_compare c1 c2 x y  = match c1 x y with
 | 0 -> c2 x y
@@ -190,16 +173,17 @@ let compare =
   let cmp =
     lex_compare (fun p1 p2 -> Misc.int_compare p1.af p2.af) cmp in
   let cmp =
-    lex_compare (fun p1 p2 -> oa_compare p1.oa p2.oa) cmp in
+    lex_compare (fun p1 p2 -> OutputAddress.compare p1.oa p2.oa) cmp in
   let cmp =
     lex_compare (fun p1 p2 -> Attrs.compare p1.attrs p2.attrs) cmp in
   cmp
 
 let eq p1 p2 =
-  oa_eq p1.oa p2.oa &&
+  OutputAddress.eq p1.oa p2.oa &&
   Misc.int_eq p1.af p2.af &&
   Misc.int_eq p1.db p2.db &&
   Misc.int_eq p1.dbm p2.dbm &&
   Misc.int_eq p1.valid p2.valid &&
   Misc.int_eq p1.el0 p2.el0 &&
   Attrs.eq p1.attrs p2.attrs
+

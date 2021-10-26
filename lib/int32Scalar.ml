@@ -14,51 +14,52 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module Int64Scalar = struct
-  include Int64
+include Int32
 
-  let shift_right_arithmetic = Int64.shift_right
+let shift_right_arithmetic = Int32.shift_right
 
-  let addk x k = match k with
+let addk x k = match k with
   | 0 -> x
   | 1 -> succ x
   | _ -> add x (of_int k)
 
-  let machsize = MachSize.Quad
+let machsize = MachSize.Word
 
-  let pp hexa v =
-    Printf.sprintf (if hexa then "0x%Lx" else "%Li") v
+let pp hexa v =
+  Printf.sprintf (if hexa then "0x%lx" else "%li") v
 
-  let pp_unsigned hexa v =
-    Printf.sprintf (if hexa then "0x%Lx" else "%Lu") v
+let pp_unsigned hexa v =
+  Printf.sprintf (if hexa then "0x%lx" else "%lu") v
 
-  let lt v1 v2 = compare v1 v2 < 0
-  let le v1 v2 = compare v1 v2 <= 0
-  let bit_at k v = Int64.logand v (Int64.shift_left Int64.one k)
-  let mask sz =
-    let open MachSize in
-    match sz with
-    | Byte -> fun v -> logand v 0xffL
-    | Short -> fun v -> logand v 0xffffL
-    | Word -> fun v ->  logand v 0xffffffffL
-    | Quad -> fun v -> v
-    | S128 -> Warn.fatal "make 64 value with s128 mask"
+let lt v1 v2 = compare v1 v2 < 0
+let le v1 v2 = compare v1 v2 <= 0
 
-  let sxt sz v =
-    let open MachSize in
-    match sz with
-    | S128|Quad -> v
-    | _ ->
-       let v = mask sz v in
-       let nb = nbits sz in
-       let m = shift_left one (nb-1) in
-       sub (logxor v m) m
+let bit_at k v = Int32.logand v (Int32.shift_left Int32.one k)
 
-  let of_int64 = Misc.identity
-  let to_int64 = Misc.identity
-
-  let get_tag _ = assert false
-  let set_tag _ = assert false
-end
-
-include SymbConstant.Make(Int64Scalar)
+let mask sz =
+  let open MachSize in
+  match sz with
+  | Byte -> fun v -> logand v 0xffl
+  | Short -> fun v -> logand v 0xffffl
+  | Word -> fun v -> v
+  | Quad -> Warn.fatal "make 32 value with quad mask"
+  | S128 -> Warn.fatal "make 32 value with s128 mask"
+          
+let sxt sz v =
+  let open MachSize in
+  match sz with
+  | S128|Quad|Word -> v
+  | _ ->
+     let v = mask sz v in
+     let nb = nbits sz in
+     let m = shift_left one (nb-1) in
+     sub (logxor v m) m
+     
+let of_int64 _ = assert false
+let to_int64 _ = assert false
+               
+let get_tag _ = assert false
+let set_tag _ = assert false
+    
+type mask = Int32.t
+let to_mask x = x

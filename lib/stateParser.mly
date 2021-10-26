@@ -66,7 +66,7 @@ let mk_lab p s = Label (p,s)
 %token LBRK RBRK LPAR RPAR LCURLY RCURLY SEMI COLON AMPER COMMA
 %token ATOMIC
 %token ATOMICINIT
-%token ATTRS
+%token ATTRS TOK_OA
 %token TOK_PTE TOK_PA
 %token TOK_TAG
 
@@ -78,7 +78,7 @@ let mk_lab p s = Label (p,s)
 %right IMPLIES
 %nonassoc NOT
 
-%type <PTEVal.t> pteval
+%type <ParsedPteVal.t> pteval
 %start pteval
 %type <MiscParser.state> init
 %start init
@@ -119,16 +119,21 @@ location_global:
 name_or_num:
 | NAME { $1 }
 | NUM { $1 }
-| TOK_PA LPAR NAME RPAR {  Misc.add_physical $3 }
-| TOK_PTE LPAR NAME RPAR {  Misc.add_pte $3 }
+
+output_address:
+| name=NAME { OutputAddress.parse name }
+| TOK_PA LPAR name=NAME RPAR { OutputAddress.PHY name }
+| TOK_PTE LPAR name=NAME RPAR { OutputAddress.PTE name }
 
 maybev_prop:
-| separated_pair(NAME, COLON, name_or_num) { PTEVal.KV $1 }
-| ATTRS COLON LPAR separated_nonempty_list(COMMA, NAME) RPAR { PTEVal.Attrs $4 }
+| TOK_OA COLON output_address { ParsedPteVal.OA $3 }
+| separated_pair(NAME, COLON, name_or_num)
+    { let k,v = $1 in ParsedPteVal.KV (k,v) }
+| ATTRS COLON LPAR separated_nonempty_list(COMMA, NAME) RPAR { ParsedPteVal.A $4 }
 
 pteval:
 | LPAR separated_nonempty_list(COMMA, maybev_prop) RPAR
-    { PTEVal.of_list0 $2 }
+    { $2 }
 
 maybev_notag:
 | NUM  { Concrete $1 }
@@ -217,9 +222,9 @@ atom_init:
 | STAR loc=left_loc EQUAL amperopt v=maybev { (loc,(TyDefPointer,v))}
 | typ=NAME loc=left_loc
   EQUAL LPAR v=separated_nonempty_list(COMMA, maybev_prop) RPAR
-  { (loc,(Ty typ, mk_pte_val loc v)) }
+  { (loc,(Ty typ, add_oa loc v)) }
 | loc=left_loc EQUAL LPAR v=separated_nonempty_list(COMMA, maybev_prop) RPAR
-  { (loc,(Ty "pteval_t", mk_pte_val loc v)) }
+  { (loc,(Ty "pteval_t", add_oa loc v)) }
 
 amperopt:
 | AMPER { () }
@@ -363,10 +368,10 @@ atom_prop:
 | loc=loc_brk NOTEQUAL v=maybev
    {Not (Atom (LV (Loc loc,v)))}
 | location equal LPAR separated_nonempty_list(COMMA, maybev_prop) RPAR
-  { Atom (LV (Loc $1, mk_pte_val $1 $4)) }
+  { Atom (LV (Loc $1, add_oa $1 $4)) }
 | loc=loc_brk equal
   LPAR v=separated_nonempty_list(COMMA, maybev_prop) RPAR
-  { Atom (LV (Loc loc, mk_pte_val loc v)) }
+  { Atom (LV (Loc loc, add_oa loc v)) }
 /* Array, array cell, equality of content no [x] = .. notation */
 | location equal LCURLY maybev_list RCURLY
     { let sz = List.length $4 in

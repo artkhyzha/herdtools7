@@ -14,44 +14,51 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module UInt128Scalar = struct
-  open Uint
-  include Uint128
 
-  let shift_right_arithmetic = Uint128.shift_right
+include Int64
 
-  let addk x k = match k with
+let shift_right_arithmetic = Int64.shift_right
+
+let addk x k = match k with
   | 0 -> x
   | 1 -> succ x
   | _ -> add x (of_int k)
 
-  let machsize = MachSize.S128
-  let pp hexa v =
-    Printf.sprintf "%s" (if hexa then (Uint128.to_string_hex v) else (Uint128.to_string v))
-  let pp_unsigned = pp (* Hum *)
+let machsize = MachSize.Quad
 
-  let lt v1 v2 = compare v1 v2 < 0
-  let le v1 v2 = compare v1 v2 <= 0
-  let bit_at k v = Uint128.logand v (Uint128.shift_left Uint128.one k)
-  let mask sz =
-    let open MachSize in
-    match sz with
-    | Byte -> fun v -> Uint128.logand v (Uint128.of_uint8 Uint8.max_int)
-    | Short -> fun v -> Uint128.logand v (Uint128.of_uint16 Uint16.max_int)
-    | Word -> fun v ->  Uint128.logand v (Uint128.of_uint32 Uint32.max_int)
-    | Quad -> fun v -> Uint128.logand v (Uint128.of_uint64 Uint64.max_int)
-    | S128 -> fun v -> v
+let pp hexa v =
+  Printf.sprintf (if hexa then "0x%Lx" else "%Li") v
 
-  let sxt sz v = match sz with
-  | MachSize.S128 -> v
+let pp_unsigned hexa v =
+  Printf.sprintf (if hexa then "0x%Lx" else "%Lu") v
+
+let lt v1 v2 = compare v1 v2 < 0
+let le v1 v2 = compare v1 v2 <= 0
+let bit_at k v = Int64.logand v (Int64.shift_left Int64.one k)
+let mask sz =
+  let open MachSize in
+  match sz with
+  | Byte -> fun v -> logand v 0xffL
+  | Short -> fun v -> logand v 0xffffL
+  | Word -> fun v ->  logand v 0xffffffffL
+  | Quad -> fun v -> v
+  | S128 -> Warn.fatal "make 64 value with s128 mask"
+
+let sxt sz v =
+  let open MachSize in
+  match sz with
+  | S128|Quad -> v
   | _ ->
-    let v = mask sz v in
-    let nb = MachSize.nbits sz in
-    let m = Uint128.shift_left Uint128.one (nb-1) in
-    Uint128.sub (Uint128.logxor v m) m
+     let v = mask sz v in
+     let nb = nbits sz in
+     let m = shift_left one (nb-1) in
+     sub (logxor v m) m
 
-  let get_tag _ = assert false
-  let set_tag _ = assert false
-end
+let of_int64 = Misc.identity
+let to_int64 = Misc.identity
 
-include SymbConstant.Make(UInt128Scalar)
+let get_tag _ = assert false
+let set_tag _ = assert false
+
+type mask = Int64.t
+let to_mask x = x

@@ -4,7 +4,7 @@
 (* Jade Alglave, University College London, UK.                             *)
 (* Luc Maranget, INRIA Paris-Rocquencourt, France.                          *)
 (*                                                                          *)
-(* Copyright 2017-present Institut National de Recherche en Informatique et *)
+(* Copyright 2021-present Institut National de Recherche en Informatique et *)
 (* en Automatique and the authors. All rights reserved.                     *)
 (*                                                                          *)
 (* This software is governed by the CeCILL-B license under French law and   *)
@@ -14,5 +14,27 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module Cst64 = SymbConstant.Make(Int64Scalar)(PteVal.No)
-include SymbValue.Make(Cst64)(ArchOp.No(Cst64))
+(** Operations that are arch specific *)
+
+module type S = sig
+  type scalar
+  type pteval
+  type cst = (scalar,pteval) Constant.t
+
+  val shift_address_right : string -> scalar -> cst option
+
+  (* Computing on PteVal's *)
+  val orop : pteval -> scalar -> pteval option
+  val andnot2 : pteval -> scalar -> pteval option
+
+end
+
+module No(Cst:Constant.S) = struct
+  type scalar = Cst.Scalar.t
+  type pteval = Cst.PteVal.t
+  type cst = (scalar,pteval) Constant.t
+  let shift_address_right _ _ = None
+  let orop _ _ = None
+  let andnot2 _ _ = None
+end
+         

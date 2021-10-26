@@ -14,5 +14,43 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module Cst64 = SymbConstant.Make(Int64Scalar)(PteVal.No)
-include SymbValue.Make(Cst64)(ArchOp.No(Cst64))
+open Uint
+include Uint128
+
+let shift_right_arithmetic = Uint128.shift_right
+
+let addk x k = match k with
+  | 0 -> x
+  | 1 -> succ x
+  | _ -> add x (of_int k)
+
+let machsize = MachSize.S128
+let pp hexa v =
+  Printf.sprintf "%s" (if hexa then (Uint128.to_string_hex v) else (Uint128.to_string v))
+let pp_unsigned = pp (* Hum *)
+
+let lt v1 v2 = compare v1 v2 < 0
+let le v1 v2 = compare v1 v2 <= 0
+let bit_at k v = Uint128.logand v (Uint128.shift_left Uint128.one k)
+let mask sz =
+  let open MachSize in
+  match sz with
+  | Byte -> fun v -> Uint128.logand v (Uint128.of_uint8 Uint8.max_int)
+  | Short -> fun v -> Uint128.logand v (Uint128.of_uint16 Uint16.max_int)
+  | Word -> fun v ->  Uint128.logand v (Uint128.of_uint32 Uint32.max_int)
+  | Quad -> fun v -> Uint128.logand v (Uint128.of_uint64 Uint64.max_int)
+  | S128 -> fun v -> v
+
+let sxt sz v = match sz with
+  | MachSize.S128 -> v
+  | _ ->
+     let v = mask sz v in
+     let nb = MachSize.nbits sz in
+     let m = Uint128.shift_left Uint128.one (nb-1) in
+     Uint128.sub (Uint128.logxor v m) m
+
+let get_tag _ = assert false
+let set_tag _ = assert false
+
+type mask = Int64.t
+let to_mask = to_int64

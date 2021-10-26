@@ -35,7 +35,8 @@ module type S = sig
   val tr_value : atom option -> Code.v -> Code.v
   val overwrite_value : Code.v -> atom option -> Code.v -> Code.v
   val extract_value : Code.v -> atom option -> Code.v
-  val set_pteval : atom option -> PTEVal.t -> (unit -> string) -> PTEVal.t
+  val set_pteval :
+    atom option -> AArch64PteVal.t -> (unit -> string) -> AArch64PteVal.t
   val merge_atoms : atom -> atom -> atom option
   val atom_to_bank : atom option -> SIMD.atom Code.bank
   val strong : fence

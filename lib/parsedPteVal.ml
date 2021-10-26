@@ -14,4 +14,22 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-include SymbValue.Make(UInt128Constant)
+open Printf
+
+type item =
+  | OA of OutputAddress.t
+  | KV of string * string
+  | A of string list
+
+type t = item list
+
+let pp_item pp_oa = function
+  | OA oa -> sprintf "oa:%s" (pp_oa oa)
+  | KV (k,v) -> sprintf "%s:%s" k v
+  | A xs -> sprintf "attrs:(%s)" (String.concat "," xs)
+
+let mk_pp pp_oa p =
+  sprintf "(%s)" (String.concat "," (List.map (pp_item pp_oa) p))
+
+let pp_old = mk_pp OutputAddress.pp_old
+and pp = mk_pp OutputAddress.pp

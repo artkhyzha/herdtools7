@@ -20,7 +20,7 @@ module Make
       val dirty : DirtyBit.t option
       val procs_user : Proc.t list
     end)
-    (V:Value.S)
+    (V:Value.S with type Cst.PteVal.t = AArch64PteVal.t)
     =
   struct
     module C = TopConf.C

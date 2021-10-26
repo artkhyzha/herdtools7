@@ -261,10 +261,7 @@ and type state = A.state =
       | Unop (op,v1) -> Atom (V.op1 op v1)
       | Binop (op,v1,v2) -> Atom (V.op op v1 v2)
       | Terop (op,v1,v2,v3) -> Atom (V.op3 op v1 v2 v3)
-      with
-      | V.Cst.Result (a,c,msg) -> (* Catch arch-dependent result. *)
-          if a = A.arch then Atom (V.Val c)
-          else Warn.fatal "%s" msg
+      with (* [expr] still contains at least one undetermined sub-expression *)
       | A.LocUndetermined
       | V.Undetermined -> e
 

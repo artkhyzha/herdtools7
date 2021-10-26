@@ -368,7 +368,7 @@ let overwrite_value v ao w = match ao with
 
 (* Page table entries *)
   let do_setpteval a f p =
-    let open PTEVal in
+    let open AArch64PteVal in
     let f = match f with
     | Set f|SetRel f -> f
     | Read|ReadAcq|ReadAcqPc ->
@@ -378,7 +378,7 @@ let overwrite_value v ao w = match ao with
     | DB -> fun _loc -> { p with db = 1-p.db; }
     | DBM -> fun _loc -> { p with dbm = 1-p.dbm; }
     | VALID -> fun _loc -> { p with valid = 1-p.valid; }
-    | OA -> fun loc -> PTEVal.set_oa p (loc ())
+    | OA -> fun loc -> set_oa p (loc ())
 
    let set_pteval a p =
      match a with

@@ -14,5 +14,12 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module Cst64 = SymbConstant.Make(Int64Scalar)(PteVal.No)
-include SymbValue.Make(Cst64)(ArchOp.No(Cst64))
+type item =
+  | OA of OutputAddress.t
+  | KV of string * string
+  | A of string list
+
+type t = item list
+
+val pp_old : t -> string
+val pp : t -> string
