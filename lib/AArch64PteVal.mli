@@ -47,7 +47,7 @@ val get_oa : t -> OutputAddress.t
 val same_oa : t -> t -> bool
 val writable : bool -> bool -> t -> bool
 val get_attrs : t -> string list
-  
+
 (* Default value *)
 val prot_default : t (* Fields only *)
 val default : string -> t (* Physical address + default fields *)
@@ -69,3 +69,10 @@ val pp_hash : t -> string (* Backward compatibility for test hashes *)
 
 val compare : t -> t -> int
 val eq : t -> t -> bool
+
+(* Litmus *)
+val fields : string list
+val default_fields : string list
+val dump_pack : (string -> string) -> t -> string
+val as_physical : t -> string option
+val as_flags : t -> string option

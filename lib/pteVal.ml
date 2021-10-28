@@ -21,6 +21,7 @@ module type S = sig
   (* Default pte for virtual addresses and pte themselves  *)
   val default : string -> t
   val of_pte : string -> t
+  val is_default : t -> bool
 
   val pp : bool -> t -> string
   val pp_v : t -> string
@@ -54,7 +55,13 @@ module type S = sig
 
    (* Attributes *)
    val get_attrs : t -> string list
-     
+
+   (* Litmus *)
+   val fields : string list
+   val default_fields : string list
+   val dump_pack : (string -> string) -> t -> string
+   val as_physical : t -> string option
+   val as_flags : t -> string option
 end
 
 module No= struct
@@ -62,6 +69,7 @@ module No= struct
 
     let default _ = assert false
     let of_pte _ = assert false
+    let is_default _ = assert false
     let pp _ _ = assert false
     let pp_v _ = assert false
     let pp_hash _ = assert false
@@ -86,5 +94,9 @@ module No= struct
     let writable _ _ _ = assert false
     let get_attrs _ = assert false
 
+    let fields = []
+    let default_fields = []
+    let dump_pack _ _ = assert false
+    let as_physical _ = None
+    let as_flags _ = None
 end
-

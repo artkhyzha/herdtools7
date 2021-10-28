@@ -187,3 +187,32 @@ let eq p1 p2 =
   Misc.int_eq p1.el0 p2.el0 &&
   Attrs.eq p1.attrs p2.attrs
 
+(* For litmus *)
+
+(* Those lists must of course match one with the other *)
+let fields = ["af";"db";"dbm";"valid";"el0";]
+and default_fields =
+  let p = prot_default in
+  let ds = [p.af; p.db; p.dbm; p.valid;p.el0;] in
+  List.map (Printf.sprintf "%i") ds
+
+let dump_pack pp_oa p =
+  sprintf
+    "pack_pack(%s,%d,%d,%d,%d,%d)"
+    (pp_oa (OutputAddress.pp_old p.oa))
+    p.af p.db p.dbm p.valid p.el0
+
+let as_physical p = OutputAddress.as_physical p.oa
+
+let as_flags p =
+  if is_default p then None
+  else
+    let add b s k = if b<>0 then s::k else k in
+    let msk =
+      add p.el0 "msk_el0"
+        (add p.valid "msk_valid"
+           (add p.af "msk_af"
+              (add p.dbm "msk_dbm"
+                 (add p.db "msk_db" [])))) in
+    let msk = String.concat "|" msk in
+    Some msk
