@@ -35,6 +35,10 @@ type t = {
   el0 : int;
   attrs : Attrs.t;
   }
+
+val compare : t -> t -> int
+val eq : t -> t -> bool
+
 (* Accessors, setters *)
 val is_af : t -> bool
 
@@ -57,9 +61,6 @@ val tr : ParsedPteVal.t -> t
 val pp : bool -> t -> string  (* Default field not printed *)
 val pp_v : t -> string  (* Decimal *)
 val pp_hash : t -> string (* Backward compatibility for test hashes *)
-
-val compare : t -> t -> int
-val eq : t -> t -> bool
 
 (* Litmus *)
 val fields : string list

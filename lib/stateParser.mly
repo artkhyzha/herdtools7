@@ -134,6 +134,8 @@ prop_head:
     { ParsedPteVal.add_oa oa tail }
 | key=NAME COLON v=name_or_num tail=prop_tail
     { ParsedPteVal.add_kv key v tail }
+| a=NAME tail=prop_tail
+    { ParsedPteVal.add_attr a tail }
 | ATTRS COLON LPAR attrs=separated_nonempty_list(COMMA, NAME) RPAR
   tail=prop_tail
     { ParsedPteVal.add_attrs attrs tail }
@@ -227,9 +229,9 @@ atom_init:
 | STAR loc=left_loc { (loc,(TyDefPointer,ParsedConstant.zero))}
 | STAR loc=left_loc EQUAL amperopt v=maybev { (loc,(TyDefPointer,v))}
 | typ=NAME loc=left_loc EQUAL v=pteval
-  { (loc,(Ty typ, add_oa loc v)) }
+  { (loc,(Ty typ, MiscParser.add_oa_if_none loc v)) }
 | loc=left_loc EQUAL v=pteval
-  { (loc,(Ty "pteval_t", add_oa loc v)) }
+  { (loc,(Ty "pteval_t", MiscParser.add_oa_if_none loc v)) }
 
 amperopt:
 | AMPER { () }
@@ -373,9 +375,9 @@ atom_prop:
 | loc=loc_brk NOTEQUAL v=maybev
    {Not (Atom (LV (Loc loc,v)))}
 | loc=location equal v=pteval
-  { Atom (LV (Loc loc, add_oa loc v )) }
+  { Atom (LV (Loc loc, MiscParser.add_oa_if_none loc v )) }
 | loc=loc_brk equal v=pteval
-  { Atom (LV (Loc loc, add_oa loc v)) }
+  { Atom (LV (Loc loc, MiscParser.add_oa_if_none loc v)) }
 /* Array, array cell, equality of content no [x] = .. notation */
 | location equal LCURLY maybev_list RCURLY
     { let sz = List.length $4 in

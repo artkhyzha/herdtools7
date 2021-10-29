@@ -28,12 +28,18 @@ let add_oa oa p =
     Warn.user_error "multiple defintion or property oa" ;
   { p with p_oa = Some oa; }
 
+let add_oa_if_none oa p =
+  if Misc.is_some p.p_oa then p
+  else { p with p_oa = Some oa; }
+
 let add_kv k v p =
   let {p_kv;_} = p in
   if StringMap.mem k p_kv then
     Warn.user_error "multiple defintion or property %s" k ;
   { p with p_kv=StringMap.add k v p_kv; }
 
+let add_attr a p =
+    { p with p_attrs = StringSet.add a p.p_attrs; }
 let add_attrs a p =
   { p with p_attrs = StringSet.union (StringSet.of_list a) p.p_attrs; }
 
@@ -43,7 +49,6 @@ let apply_not_empty f = function
   | s -> f s
 
 let pp_comma = apply_not_empty (sprintf ", %s")
-and pp_attrs = apply_not_empty (sprintf ", attrs(%s)")
 
 let mk_pp pp_oa { p_oa; p_kv; p_attrs; } =
   sprintf
@@ -53,7 +58,7 @@ let mk_pp pp_oa { p_oa; p_kv; p_attrs; } =
        (StringMap.pp_str_delim ", "
           (fun k v -> sprintf "%s:%s" k v)
           p_kv))
-    (pp_attrs (StringSet.pp_str ", " Misc.identity p_attrs))
+    (pp_comma (StringSet.pp_str ", " Misc.identity p_attrs))
 
 let pp_old = mk_pp OutputAddress.pp_old
 and pp = mk_pp OutputAddress.pp

@@ -125,7 +125,7 @@ let key_compare k1 k2 =
     Warn.user_error "Duplicated meta-data on key %s\n" k2 ;
   String.compare k1 k2
 
-let digest_info i =
+let do_digest_info verbose i =
   let i = List.stable_sort (fun (k1,_) (k2,_) -> key_compare k1 k2) i in
   let ds =
     List.fold_left
@@ -136,7 +136,14 @@ let digest_info i =
       [] i in
   match ds with
   | [] -> "" (* Backward compatibility *)
-  | _::_ -> Digest.string (String.concat "" ds)
+  | _::_ ->
+     let i = String.concat "" ds in
+     let d = Digest.string i in
+     if verbose > 0 then
+       eprintf "INFO:\n%s\nDigest=\"%s\"\n\n"
+         i (Digest.to_hex d) ;
+     d
+let digest_info = do_digest_info 0
 
 (**********)
 (* Digest *)
@@ -152,8 +159,12 @@ module Make(A:ArchBase.S)
       let verbose = 0
 
       let debug tag s =
-        if verbose > 0 then eprintf "%s:\n%s\n" tag s
+        if verbose > 0 then
+          eprintf "%s:\n%s\nDigest=\"%s\"\n\n"
+            tag s (Digest.to_hex (Digest.string s))
         else ()
+
+      let digest_info = do_digest_info verbose
 
       module HU=HashUtils(A)
 
@@ -233,7 +244,6 @@ module Make(A:ArchBase.S)
             (List.map (ConstrGen.dump_rloc HU.dump_location) locs) in
         debug "LOCS" pp ;
         Digest.string pp
-
 
       let digest info init code observed =
         Digest.to_hex

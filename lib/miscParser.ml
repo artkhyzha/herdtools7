@@ -244,7 +244,7 @@ let set_hash p h = { p with info = set_hash_rec  h p.info; }
 
 let get_info p key = get_info_on_info key p.info
 
-let add_oa loc p =
+let add_oa_if_none loc p =
   let open Constant in
   try
     let oa =
@@ -254,6 +254,6 @@ let add_oa loc p =
       | Location_global (Symbolic (System (Constant.PTE2,s))) ->
          OutputAddress.PTE s
       | _ -> raise Exit in
-    let p = { p with ParsedPteVal.p_oa = Some oa; } in
+    let p = ParsedPteVal.add_oa_if_none oa p in
     Constant.PteVal p
   with Exit -> PteVal p

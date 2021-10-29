@@ -22,7 +22,9 @@ type t =
 (* Buld values *)
 val empty : t
 val add_oa : OutputAddress.t -> t -> t
+val add_oa_if_none : OutputAddress.t -> t -> t
 val add_kv : string -> string -> t -> t
+val add_attr : string -> t -> t
 val add_attrs : string list -> t -> t
 
 val compare : t -> t -> int

@@ -23,13 +23,12 @@ module Attrs = struct
      return on Linux. This is architecture specific, however, for now,
      translation is supported only for AArch64. *)
   let default =
-    List.fold_right StringSet.add
+    StringSet.of_list
       [ "Normal" ; "Inner-shareable"; "Inner-write-back"; "Outer-write-back" ]
-      StringSet.empty
 
   let compare a1 a2 = StringSet.compare a1 a2
   let eq a1 a2 = StringSet.equal a1 a2
-  let pp a = String.concat ", " (StringSet.elements a)
+  let pp a = StringSet.pp_str ", " Misc.identity a
   let as_list a = StringSet.elements a
   let of_list l = StringSet.of_list l
 end
@@ -44,6 +43,14 @@ type t = {
   el0 : int;
   attrs: Attrs.t;
   }
+
+let eq_props p1 p2 =
+  Misc.int_eq p1.af p2.af &&
+  Misc.int_eq p1.db p2.db &&
+  Misc.int_eq p1.dbm p2.dbm &&
+  Misc.int_eq p1.valid p2.valid &&
+  Misc.int_eq p1.el0 p2.el0 &&
+  Attrs.eq p1.attrs p2.attrs
 
 (* Let us abstract... *)
 let is_af {af; _} = af <> 0
@@ -85,10 +92,7 @@ and pp_dbm hexa ok = pp_int_field hexa ok "dbm" (fun p -> p.dbm)
 and pp_el0 hexa ok = pp_int_field hexa ok "el0" (fun p -> p.el0)
 and pp_attrs ok = pp_field ok (fun a -> Attrs.pp a) Attrs.eq (fun p -> p.attrs)
 
-let is_default t =
-  let d = prot_default in
-  t.valid=d.valid && t.af=d.af && t.db=d.db && t.dbm=d.dbm && t.el0=d.el0 &&
-    t.attrs=Attrs.default
+let is_default t =  eq_props prot_default t
 
 (* If showall is true, field will always be printed.
    Otherwise, field will be printed only if non-default.
@@ -140,7 +144,9 @@ let tr p =
     | None -> r
     | Some oa -> { r with oa; } in
   let r = StringMap.fold add_field p.p_kv r in
-  let r = { r with attrs=p.p_attrs; } in
+  let r =
+    let attrs = StringSet.union r.attrs p.p_attrs; in
+    { r with attrs; } in
   r
 
 let lex_compare c1 c2 x y  = match c1 x y with
@@ -163,14 +169,7 @@ let compare =
     lex_compare (fun p1 p2 -> Attrs.compare p1.attrs p2.attrs) cmp in
   cmp
 
-let eq p1 p2 =
-  OutputAddress.eq p1.oa p2.oa &&
-  Misc.int_eq p1.af p2.af &&
-  Misc.int_eq p1.db p2.db &&
-  Misc.int_eq p1.dbm p2.dbm &&
-  Misc.int_eq p1.valid p2.valid &&
-  Misc.int_eq p1.el0 p2.el0 &&
-  Attrs.eq p1.attrs p2.attrs
+let eq p1 p2 = OutputAddress.eq p1.oa p2.oa && eq_props p1 p2
 
 (* For litmus *)
 
