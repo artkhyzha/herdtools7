@@ -31,37 +31,23 @@ module type S = sig
   val eq : t -> t -> bool
   val compare : t -> t -> int
 
-  (* Access flag *)
+  (* Access flag exported, accessed in mem.ml  *)
   val is_af : t -> bool
-  val set_af : t -> t
 
-  (* Dirty bit *)
-   val is_db : t -> bool
-   val set_db : t -> t
-   val is_dbm : t -> bool
+  val same_oa : t -> t -> bool
 
-  (* Valid *)
-   val is_valid : t -> bool
+  (* Value specifies a writable page *)
+  val writable : bool -> bool -> t -> bool
 
-  (* User level *)
-   val is_el0 : t-> bool
+  (* Attributes *)
+  val get_attrs : t -> string list
 
-   (* Output Address *)
-   val get_oa : t -> OutputAddress.t
-   val same_oa : t -> t -> bool
-
-   (* Value specifies a writable page *)
-   val writable : bool -> bool -> t -> bool
-
-   (* Attributes *)
-   val get_attrs : t -> string list
-
-   (* Litmus *)
-   val fields : string list
-   val default_fields : string list
-   val dump_pack : (string -> string) -> t -> string
-   val as_physical : t -> string option
-   val as_flags : t -> string option
+  (* Litmus *)
+  val fields : string list
+  val default_fields : string list
+  val dump_pack : (string -> string) -> t -> string
+  val as_physical : t -> string option
+  val as_flags : t -> string option
 end
 
 module No= struct
@@ -79,17 +65,7 @@ module No= struct
     let compare _ _ = assert false
 
     let is_af _ = assert false
-    and set_af _ = assert false
 
-    let is_db _ = assert false
-    and set_db _ = assert false
-    and is_dbm _ = assert false
-
-    let is_valid _ = assert false
-
-    let is_el0 _ = assert false
-
-    let get_oa _ = assert false
     let same_oa _ _ = assert false
     let writable _ _ _ = assert false
     let get_attrs _ = assert false

@@ -37,13 +37,7 @@ type t = {
   }
 (* Accessors, setters *)
 val is_af : t -> bool
-val set_af : t -> t
-val is_db : t -> bool
-val set_db : t -> t
-val is_dbm : t -> bool
-val is_valid : t -> bool
-val is_el0 : t -> bool
-val get_oa : t -> OutputAddress.t
+
 val same_oa : t -> t -> bool
 val writable : bool -> bool -> t -> bool
 val get_attrs : t -> string list
@@ -52,9 +46,6 @@ val get_attrs : t -> string list
 val prot_default : t (* Fields only *)
 val default : string -> t (* Physical address + default fields *)
 val of_pte : string -> t (* Default value for pte page table entry *)
-
-(* Set oa  field *)
-val set_oa : t -> string -> t
 
 (* Flags have default values *)
 val is_default : t -> bool

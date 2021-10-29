@@ -14,5 +14,8 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module Op = AArch64Op.Make(CapabilityScalar)
-include SymbValue.Make(SymbConstant.Make(CapabilityScalar)(AArch64PteVal))(Op)
+module CapOp = AArch64Op.Make(CapabilityScalar)
+include
+  SymbValue.Make
+    (SymbConstant.Make(CapabilityScalar)(AArch64PteVal))
+    (CapOp)

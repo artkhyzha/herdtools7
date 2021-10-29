@@ -47,17 +47,7 @@ type t = {
 
 (* Let us abstract... *)
 let is_af {af; _} = af <> 0
-and set_af p = { p with af=1; }
 
-let is_db {db; _} = db <> 0
-and set_db p = { p with db=1; }
-and is_dbm {dbm; _} = dbm <> 0
-
-let is_el0 {el0; _} = el0 <> 0
-
-let is_valid {valid; _} = valid <> 0
-
-let get_oa {oa; _} = oa
 and same_oa {oa=oa1; _} {oa=oa2; _} = OutputAddress.eq oa1 oa2
 
 (* *)
@@ -94,8 +84,6 @@ and pp_db hexa ok = pp_int_field hexa ok "db" (fun p -> p.db)
 and pp_dbm hexa ok = pp_int_field hexa ok "dbm" (fun p -> p.dbm)
 and pp_el0 hexa ok = pp_int_field hexa ok "el0" (fun p -> p.el0)
 and pp_attrs ok = pp_field ok (fun a -> Attrs.pp a) Attrs.eq (fun p -> p.attrs)
-
-let set_oa p s = { p with oa = OutputAddress.PHY s; }
 
 let is_default t =
   let d = prot_default in

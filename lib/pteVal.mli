@@ -31,37 +31,24 @@ module type S = sig
   val eq : t -> t -> bool
   val compare : t -> t -> int
 
-  (* Access flag *)
+  (* Access flag exported, accessed in mem.ml  *)
   val is_af : t -> bool
-  val set_af : t -> t
 
-  (* Dirty bit *)
-   val is_db : t -> bool
-   val set_db : t -> t
-   val is_dbm : t -> bool
+  (* Some predicates, generic enough *)
+  val same_oa : t -> t -> bool
 
-  (* Valid *)
-   val is_valid : t -> bool
+  (* boolean arguments are AArch64 specific *)
+  val writable : bool -> bool -> t -> bool
 
-  (* User level *)
-   val is_el0 : t-> bool
+  (* Attributes *)
+  val get_attrs : t -> string list
 
-   (* Output Address *)
-   val get_oa : t -> OutputAddress.t
-   val same_oa : t -> t -> bool
-
-   (* Pte specifies a writable page, booleans are AARch64 specific *)
-   val writable : bool -> bool -> t -> bool
-
-   (* Attributes *)
-   val get_attrs : t -> string list
-     
   (* Litmus *)
-   val fields : string list
-   val default_fields : string list
-   val dump_pack : (string -> string) -> t -> string
-   val as_physical : t -> string option
-   val as_flags : t -> string option
+  val fields : string list
+  val default_fields : string list
+  val dump_pack : (string -> string) -> t -> string
+  val as_physical : t -> string option
+  val as_flags : t -> string option
 end
 
 module No : S

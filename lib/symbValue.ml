@@ -25,6 +25,11 @@ module
 
   module Cst = Cst
 
+  type arch_op1 = ArchOp.op1
+  let pp_arch_op1 = ArchOp.pp_op1
+
+  type op1_t = arch_op1 Op.op1
+
   open Constant
   open Cst
 
@@ -79,7 +84,6 @@ module
   let stringToV i  = Val (Cst.stringToV i)
   and nameToV s = Val (Cst.nameToV s)
   and cstToV cst = Val cst
-  and boolToCst b = if b then Cst.one else  Cst.zero
 
   let maybevToV c = Val (Cst.tr c)
 
@@ -117,12 +121,14 @@ module
         Warn.user_error "Illegal operation on %s" (Cst.pp_v x)
     | Var _ -> raise Undetermined
 
+  let pp_unop hexa = Op.pp_op1 hexa ArchOp.pp_op1
+
   let unop op_op op v1 = match v1 with
     | Val (Concrete i1) ->
         Val (Concrete (op i1))
     | Val (ConcreteVector _|Symbolic _|Label _|Tag _|PteVal _ as x) ->
         Warn.user_error "Illegal operation %s on %s"
-          (Op.pp_op1 true op_op) (Cst.pp_v x)
+          (pp_unop true op_op) (Cst.pp_v x)
     | Var _ -> raise Undetermined
 
   let binop op_op op v1 v2 = match v1,v2 with
@@ -158,7 +164,7 @@ module
         Val (Concrete (op (scalar_of_cap c)))
     | Val cst ->
         Warn.user_error "Illegal operation %s on %s"
-          (Op.pp_op1 true op_op) (Cst.pp_v cst)
+          (pp_unop true op_op) (Cst.pp_v cst)
     | Var _ -> raise Undetermined
 
   (* Concrete,Concrete -> Concrete
@@ -455,37 +461,6 @@ module
       Warn.user_error "Illegal offset on %s" (pp_v v)
   | Var _ -> raise Undetermined
 
-  let op_pte_val op_op op v = match v with
-  | Val (PteVal a) -> Val (op a)
-  | Var _ -> raise Undetermined
-  | _ -> Warn.user_error "Illegal pte operation %s on %s" op_op (pp_v v)
-
-  let op_getaf a = boolToCst (PteVal.is_af a)
-  let getaf = op_pte_val "getaf" op_getaf
-
-  let op_set_pteval op op_op v = match v with
-    | Val (PteVal pte_v) -> Val (PteVal (op pte_v))
-    | Var _ -> raise Undetermined
-    | _ -> Warn.user_error "Illegal %s on %s" op_op (pp_v v)
-
-  let setaf = op_set_pteval PteVal.set_af "setaf"
-
-  let op_getdb a = boolToCst (PteVal.is_db a)
-  let getdb = op_pte_val "getdb" op_getdb
-  let setdb = op_set_pteval PteVal.set_db "setdb"
-
-  let op_getdbm a = boolToCst (PteVal.is_dbm a)
-  let getdbm = op_pte_val "getdbm" op_getdbm
-
-  let op_getvalid a = boolToCst (PteVal.is_valid a)
-  let getvalid = op_pte_val "get_valid" op_getvalid
-
-  let op_getel0 a = boolToCst (PteVal.is_el0 a)
-  let getel0 = op_pte_val "getel0" op_getel0
-
-  let op_getoa a = Symbolic (Constant.oa2symbol (PteVal.get_oa a))
-  let getoa = op_pte_val "getoa" op_getoa
-
   let op_tlbloc {name=a;_} = Symbolic (System (TLB,a))
   let tlbloc = op_pte_tlb "tlbloc" op_tlbloc
 
@@ -762,14 +737,17 @@ module
     | PTELoc -> pteloc
     | Offset -> offset
     | IsVirtual -> is_virtual_v
-    | AF -> getaf
-    | SetAF -> setaf
-    | DB -> getdb
-    | SetDB -> setdb
-    | DBM -> getdbm
-    | Valid -> getvalid
-    | EL0 -> getel0
-    | OA -> getoa
+    | ArchOp1 op ->
+        (function
+         | Var _ -> raise Undetermined
+         | Val c as v ->
+             begin
+               match ArchOp.do_op1 op c with
+               | None ->
+                   Warn.user_error "Illegal operation %s on %s"
+                     (ArchOp.pp_op1 true op) (pp_v v)
+               | Some c -> Val c
+             end)
 
   let op op = match op with
   | Add -> add

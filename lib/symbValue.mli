@@ -22,5 +22,6 @@ module Make :
            with type scalar = Cst.Scalar.t
            and type pteval = Cst.PteVal.t) ->
   sig
-    include Value.S with module Cst = Cst
+    include Value.S
+    with module Cst = Cst and type arch_op1 = ArchOp.op1
   end

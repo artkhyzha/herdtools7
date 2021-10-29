@@ -376,19 +376,19 @@ module Make(C:Config) (S:Sem.Semantics) : S with module S = S	=
         let r,e = es.E.po in
         (r,E.EventRel.transitive_closure e) in
 
-      let af0 =
+      let af0 = (* locations with initial spurious update *)
         if
           match C.dirty with
           | None -> false
           | Some t -> t.DirtyBit.some_ha || t.DirtyBit.some_hd
-        then begin
+        then begin (* One spurious update per observed pte (final load) *)
             if C.variant Variant.PhantomOnLoad then
               let look_pt rloc k = match rloc with
                 | ConstrGen.Loc (A.Location_global (V.Val c as vloc))
                 when Constant.is_pt c -> vloc::k
                 | _ -> k in
               A.RLocSet.fold look_pt test.Test_herd.observed []
-            else
+            else (* One spurious update per variable not accessed initially *)
               let add_setaf0 k (loc,v) =
                 match loc with
                 | A.Location_global (V.Val c as vloc) ->

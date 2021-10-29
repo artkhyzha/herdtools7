@@ -14,11 +14,84 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
+type t =
+  | AF (* get AF from PTE entry *)
+  | SetAF (* set AF to 1 in PTE entry *)
+  | DB (* get DB from PTE entry *)
+  | SetDB (* set DB to 1 in PTE entry *)
+  | DBM (* get DBM from PTE entry *)
+  | Valid (* get Valid bit from PTE entry *)
+  | EL0 (* get EL0 bit from PTE entry *)
+  | OA (* get OA from PTE entry *)
+
 module Make(S:Scalar.S) =
   struct
+
+    type op1 = t
+
+    let pp_op1 _hexa = function
+      | AF -> "AF"
+      | SetAF -> "SetAF"
+      | DB -> "DB"
+      | SetDB -> "SetDB"
+      | DBM -> "DBM"
+      | Valid -> "Valid"
+      | EL0 -> "EL0"
+      | OA -> "OA"
+
+
     type scalar = S.t
     type pteval = AArch64PteVal.t
     type cst = (scalar,pteval) Constant.t
+
+
+    open AArch64PteVal
+
+    let boolToCst =
+      let open Constant in
+      let zero = Concrete S.zero
+      and one = Concrete S.one in
+      fun b -> if b then one else zero
+
+    let op_get_pteval op (v:cst) =
+      let open Constant in
+      match v with
+      | PteVal p -> Some (boolToCst (op p))
+      | _ -> None
+
+    let op_set_pteval op (v:cst) =
+      let open Constant in
+      match v with
+      | PteVal p -> Some (PteVal (op p))
+      | _ -> None
+
+    let getaf = op_get_pteval (fun p -> p.af <> 0)
+    let setaf = op_set_pteval (fun p -> { p with af=1; })
+
+    let getdb = op_get_pteval (fun p -> p.db <> 0)
+    let setdb = op_set_pteval (fun p -> { p with db=1; })
+
+    let getdbm = op_get_pteval (fun p -> p.dbm <> 0)
+
+    let getvalid = op_get_pteval (fun p -> p.valid <> 0)
+
+    let getel0 = op_get_pteval (fun p -> p.el0 <> 0)
+
+    let getoa v =
+      let open Constant in
+      match v with
+      | PteVal {oa;_} -> Some (Symbolic (oa2symbol oa))
+      | _ -> None
+
+    let do_op1 = function
+      | AF -> getaf
+      | SetAF -> setaf
+      | DB -> getdb
+      | SetDB -> setdb
+      | DBM -> getdbm
+      | Valid -> getvalid
+      | EL0 -> getel0
+      | OA -> getoa
 
     let shift_address_right s c =
       let open Constant in
@@ -34,11 +107,9 @@ module Make(S:Scalar.S) =
         (S.logor
            (S.logor mask_valid  mask_db)
            (S.logor  mask_af  mask_dbm))
-      
+
     let is_zero v = S.equal S.zero v
     let is_set v m = not (is_zero (S.logand v m))
-
-    open AArch64PteVal
 
     let orop p m =
       if is_set m  mask_all_neg then None

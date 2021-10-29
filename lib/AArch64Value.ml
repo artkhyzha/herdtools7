@@ -14,6 +14,7 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-module Op = AArch64Op.Make(Int64Scalar)
 include
-  SymbValue.Make(SymbConstant.Make(Int64Scalar)(AArch64PteVal))(Op)
+  SymbValue.Make
+    (SymbConstant.Make(Int64Scalar)(AArch64PteVal))
+    (AArch64Op.Make(Int64Scalar))
