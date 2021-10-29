@@ -17,6 +17,8 @@
 type v = (string,ParsedPteVal.t) Constant.t
 
 let zero = Constant.Concrete "0"
+and one = Constant.Concrete "1"
+and intToV i = Constant.Concrete (string_of_int i)
 
 let no_comp _ _ = assert false
 

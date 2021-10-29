@@ -254,9 +254,6 @@ let add_oa loc p =
       | Location_global (Symbolic (System (Constant.PTE2,s))) ->
          OutputAddress.PTE s
       | _ -> raise Exit in
-    let p =
-      let open ParsedPteVal in
-      if not (List.exists (function OA _ -> true | KV _|A _ -> false) p)
-      then OA oa::p else p in
+    let p = { p with ParsedPteVal.p_oa = Some oa; } in
     Constant.PteVal p
   with Exit -> PteVal p

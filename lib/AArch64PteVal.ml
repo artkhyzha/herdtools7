@@ -84,8 +84,8 @@ let of_pte s = { prot_default with  oa=OutputAddress.PTE s; el0=0; }
 let pp_field ok pp eq ac p k =
   let f = ac p in if not ok && eq f (ac prot_default) then k else pp f::k
 
-let pp_int_field hexa ok name =
-  let pp_int = if hexa then sprintf "0x%x" else sprintf "%d" in
+let pp_int_field _hexa ok name =
+  let pp_int = (* if hexa then sprintf "0x%x" else *) sprintf "%d" in
   pp_field ok (fun v -> sprintf "%s:%s" name (pp_int v)) Misc.int_eq
 
 let pp_valid hexa ok = pp_int_field hexa ok "valid" (fun p -> p.valid)
@@ -134,29 +134,26 @@ let my_int_of_string s v =
     _ -> Warn.user_error "PTE field %s should be an integer" s
   in v
 
-let do_of_list p l =
+let add_field k v p =
+  match k with
+  | "af" -> { p with af = my_int_of_string k v }
+  | "db" -> { p with db = my_int_of_string k v }
+  | "dbm" -> { p with dbm = my_int_of_string k v }
+  | "valid" -> { p with valid = my_int_of_string k v }
+  | "el0" -> { p with el0 = my_int_of_string k v }
+  | _ ->
+      Warn.user_error "Illegal AArch64 page table entry property %s" k
+
+let tr p =
   let open ParsedPteVal in
-  let add_field a v = match v with
-    | OA oa -> { a with oa; }
-    | KV (s, v) -> begin
-        match s with
-        | "af" -> { a with af = my_int_of_string s v }
-        | "db" -> { a with db = my_int_of_string s v }
-        | "dbm" -> { a with dbm = my_int_of_string s v }
-        | "valid" -> { a with valid = my_int_of_string s v }
-        | "el0" -> { a with el0 = my_int_of_string s v }
-        | _ ->
-           Warn.user_error "Illegal PTE property %s" s
-      end
-    | A l -> { a with attrs = Attrs.of_list l }
-  in
-  let rec of_list a = function
-    | [] -> a
-    | h::t -> of_list (add_field a h) t in
-
-  of_list p l
-
-let tr p = do_of_list prot_default p
+  let r = prot_default in
+  let r =
+    match p.p_oa with
+    | None -> r
+    | Some oa -> { r with oa; } in
+  let r = StringMap.fold add_field p.p_kv r in
+  let r = { r with attrs=p.p_attrs; } in
+  r
 
 let lex_compare c1 c2 x y  = match c1 x y with
 | 0 -> c2 x y

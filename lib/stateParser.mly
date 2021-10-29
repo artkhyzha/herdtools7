@@ -125,15 +125,21 @@ output_address:
 | TOK_PA LPAR name=NAME RPAR { OutputAddress.PHY name }
 | TOK_PTE LPAR name=NAME RPAR { OutputAddress.PTE name }
 
-maybev_prop:
-| TOK_OA COLON output_address { ParsedPteVal.OA $3 }
-| separated_pair(NAME, COLON, name_or_num)
-    { let k,v = $1 in ParsedPteVal.KV (k,v) }
-| ATTRS COLON LPAR separated_nonempty_list(COMMA, NAME) RPAR { ParsedPteVal.A $4 }
+prop_tail:
+| { ParsedPteVal.empty }
+| COMMA pteval=prop_head { pteval }
+
+prop_head:
+| TOK_OA COLON oa=output_address tail=prop_tail
+    { ParsedPteVal.add_oa oa tail }
+| key=NAME COLON v=name_or_num tail=prop_tail
+    { ParsedPteVal.add_kv key v tail }
+| ATTRS COLON LPAR attrs=separated_nonempty_list(COMMA, NAME) RPAR
+  tail=prop_tail
+    { ParsedPteVal.add_attrs attrs tail }
 
 pteval:
-| LPAR separated_nonempty_list(COMMA, maybev_prop) RPAR
-    { $2 }
+| LPAR pteval=prop_head RPAR { pteval }
 
 maybev_notag:
 | NUM  { Concrete $1 }
@@ -220,10 +226,9 @@ atom_init:
 | typ=NAME STAR loc=left_loc EQUAL amperopt v=maybev { (loc,(Pointer typ,v))}
 | STAR loc=left_loc { (loc,(TyDefPointer,ParsedConstant.zero))}
 | STAR loc=left_loc EQUAL amperopt v=maybev { (loc,(TyDefPointer,v))}
-| typ=NAME loc=left_loc
-  EQUAL LPAR v=separated_nonempty_list(COMMA, maybev_prop) RPAR
+| typ=NAME loc=left_loc EQUAL v=pteval
   { (loc,(Ty typ, add_oa loc v)) }
-| loc=left_loc EQUAL LPAR v=separated_nonempty_list(COMMA, maybev_prop) RPAR
+| loc=left_loc EQUAL v=pteval
   { (loc,(Ty "pteval_t", add_oa loc v)) }
 
 amperopt:
@@ -367,10 +372,9 @@ atom_prop:
 | location NOTEQUAL maybev {Not (Atom (LV (Loc $1,$3)))}
 | loc=loc_brk NOTEQUAL v=maybev
    {Not (Atom (LV (Loc loc,v)))}
-| location equal LPAR separated_nonempty_list(COMMA, maybev_prop) RPAR
-  { Atom (LV (Loc $1, add_oa $1 $4)) }
-| loc=loc_brk equal
-  LPAR v=separated_nonempty_list(COMMA, maybev_prop) RPAR
+| loc=location equal v=pteval
+  { Atom (LV (Loc loc, add_oa loc v )) }
+| loc=loc_brk equal v=pteval
   { Atom (LV (Loc loc, add_oa loc v)) }
 /* Array, array cell, equality of content no [x] = .. notation */
 | location equal LCURLY maybev_list RCURLY

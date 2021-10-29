@@ -14,12 +14,19 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-type item =
-  | OA of OutputAddress.t
-  | KV of string * string
-  | A of string list
+type t =
+  { p_oa : OutputAddress.t option;
+    p_kv : string StringMap.t;
+    p_attrs : StringSet.t; }
 
-type t = item list
+(* Buld values *)
+val empty : t
+val add_oa : OutputAddress.t -> t -> t
+val add_kv : string -> string -> t -> t
+val add_attrs : string list -> t -> t
+
+val compare : t -> t -> int
+val eq : t -> t -> bool
 
 val pp_old : t -> string
 val pp : t -> string
