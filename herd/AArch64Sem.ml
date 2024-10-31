@@ -1952,29 +1952,42 @@ module Make
         let an = rmw_to_read rmw in
         let read_rs = read_reg_data sz rs ii
         and write_rs v = write_reg_sz sz rs v ii in
-        lift_memop rn Dir.W true memtag
-           (* mv is read new value from reg, not important
-              as this code is not executed in morello mode *)
-          (fun ac ma mv ->
-             let noret = match rs with | AArch64.ZR -> true | _ -> false in
-             let is_phy = Access.is_physical ac in
-             let branch a =
-               let cond = Printf.sprintf "[%s]==%d:%s" (V.pp_v a) ii.A.proc (A.pp_reg rs) in
-               commit_pred_txt (Some cond) ii in
-             M.altT
-              (let read_mem a =
-                  if noret then do_read_mem_ret sz Annot.NoRet aexp ac a ii
-                  else do_read_mem_ret sz an aexp ac a ii in
-               M.aarch64_cas_no is_phy ma read_rs write_rs read_mem branch M.neqT)
-              (let read_rt = mv
-               and read_mem a =
-                 if noret then do_read_mem_ret sz Annot.NoRet aexp ac a ii
-                 else rmw_amo_read sz rmw ac a ii
-               and write_mem a v = rmw_amo_write sz rmw ac a v ii in
-               M.aarch64_cas_ok is_phy ma read_rs read_rt write_rs
-                 read_mem write_mem branch M.eqT))
-          (to_perms "rw" sz) (read_reg_ord rn ii) (read_reg_data sz rt ii)
-        an ii
+        M.altT (
+          lift_memop rn Dir.R false memtag
+            (fun ac ma _ ->
+              let noret = match rs with | AArch64.ZR -> true | _ -> false in
+              let is_phy = Access.is_physical ac in
+              let branch a =
+                let cond = Printf.sprintf "[%s]==%d:%s" (V.pp_v a) ii.A.proc (A.pp_reg rs) in
+                commit_pred_txt (Some cond) ii in
+                let read_mem a =
+                    if noret then do_read_mem_ret sz Annot.NoRet aexp ac a ii
+                    else do_read_mem_ret sz an aexp ac a ii in
+                M.aarch64_cas_no is_phy ma read_rs write_rs read_mem branch M.neqT
+                )
+            (to_perms "rw" sz) (read_reg_ord rn ii) (read_reg_data sz rt ii)
+          an ii
+        ) (
+          lift_memop rn Dir.W true memtag
+            (* mv is read new value from reg, not important
+                as this code is not executed in morello mode *)
+            (fun ac ma mv ->
+              let noret = match rs with | AArch64.ZR -> true | _ -> false in
+              let is_phy = Access.is_physical ac in
+              let branch a =
+                let cond = Printf.sprintf "[%s]==%d:%s" (V.pp_v a) ii.A.proc (A.pp_reg rs) in
+                commit_pred_txt (Some cond) ii in
+              let read_rt = mv
+              and read_mem a =
+                if noret then do_read_mem_ret sz Annot.NoRet aexp ac a ii
+                else rmw_amo_read sz rmw ac a ii
+              and write_mem a v = rmw_amo_write sz rmw ac a v ii in
+              M.aarch64_cas_ok is_phy ma read_rs read_rt write_rs
+                read_mem write_mem branch M.eqT
+            )
+            (to_perms "rw" sz) (read_reg_ord rn ii) (read_reg_data sz rt ii)
+          an ii
+        )
 
       let casp sz rmw rs1 rs2 rt1 rt2 rn ii =
         let an = rmw_to_read rmw in
