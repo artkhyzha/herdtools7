@@ -325,11 +325,29 @@ module Make(C:Config) (S:Sem.Semantics) : S with module S = S	=
 (* canonical location (label).                            *)
 (**********************************************************)
 
-    let debug_env env =
-        String.concat ", "
-          (List.map
-             (fun (loc,v) -> sprintf "%s -> %s" (A.pp_location loc) (V.pp_v v))
-             env) in
+      (* map an addres to an address for rep*)
+      let representative_label =
+        let on_the_same_page a1 a2 =
+          (a1 / 4096) = (a2 / 4096)
+        in
+        let labels =
+          prog
+          |> Label.Map.to_list
+          |> List.sort (fun (k1,a1) (k2,a2) -> Int.compare a1 a2) in
+        let abc ls =
+          let rec iter ls a2a = 
+            match ls with
+            | (l1,a1)::(l2,a2)::tail when (on_the_same_page a1 a2) ->
+                iter tail a2a
+            | (l1,a1)::(l2,a2)::tail ->
+                iter ((l2,a2)::tail) (IntMap.add (a2 / 4096) a2 a2a)
+            | _ -> a2a
+          in
+          match ls with
+          | (_,a)::tl -> iter ls (IntMap.add (a / 4096) a (IntMap.empty))
+          | [] -> (IntMap.empty)
+        in
+        abc labels in
 
       (* lbls2i -- overwritable instructions, with labels          *)
       (* overwritable_labels -- the set of labels of instructions  *)
