@@ -130,6 +130,7 @@ val map_label : (Label.t -> Label.t) -> ('s,'pte,'instr) t -> ('s,'pte,'instr) t
 val map :
   ('a -> 'b) -> ('c -> 'd) -> ('e -> 'f) -> ('a,'c,'e) t -> ('b,'d,'f) t
 
+val mk_sym_physical_label_from_virt : ('scalar,'pte,'instr) t -> ('scalar,'pte,'instr) t
 val mk_sym_virtual_label : Proc.t -> Label.t -> ('scalar,'pte,'instr) t
 val mk_sym_virtual_label_with_offset : Proc.t -> Label.t -> offset -> ('scalar,'pte,'instr) t
 val mk_sym_virtual : string -> ('scalar,'pte,'instr) t

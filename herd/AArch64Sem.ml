@@ -4361,7 +4361,7 @@ module Make
                 (fun (_,lbl0) -> Misc.string_eq lbl lbl0)
                 lbls)
             ii.A.labels in
-        if is_exported then
+        if true then
           match Label.norm ii.A.labels with
           | None -> assert false
           | Some hd ->
