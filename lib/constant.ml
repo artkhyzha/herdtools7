@@ -384,6 +384,9 @@ let rec map f_scalar f_pteval f_instr = function
 let do_mk_virtual_label p s =
   Virtual { default_symbolic_data with name=Symbol.Label (p,s); }
 
+let do_mk_virtual_label_with_offset p s o =
+  Virtual { default_symbolic_data with name=Symbol.Label (p,s); offset=o }
+
 let do_mk_virtual s =
   Virtual { default_symbolic_data with name=Symbol.of_string s; }
 
@@ -400,7 +403,8 @@ let mk_sym_physical_label_from_virt = function
       Symbolic (Physical (sprintf "%i:%s" p s,0))
   | _ -> assert false
 
-let mk_sym_virtual_label p lbl = Symbolic (do_mk_virtual_label p lbl)
+let mk_sym_virtual_label p lbl = Symbolic (do_mk_virtual_label_with_offset p lbl 0)
+let mk_sym_virtual_label_with_offset p lbl o = Symbolic (do_mk_virtual_label_with_offset p lbl o)
 let mk_sym_virtual s = Symbolic (do_mk_virtual s)
 let mk_sym s = Symbolic (do_mk_sym s)
 
@@ -462,6 +466,12 @@ let is_data = function
 
 let is_label = function
   | Symbolic (Virtual ({name=n; _})) -> Symbol.is_label n
+  | Concrete _ | ConcreteVector _ | ConcreteRecord _ | Symbolic _ | Tag _
+  | PteVal _ | Instruction _ | Frozen _ ->
+      false
+
+let is_label_pa = function
+  | Symbolic (Physical (s,_)) -> s |> Symbol.of_string |> Symbol.is_label
   | Concrete _ | ConcreteVector _ | ConcreteRecord _ | Symbolic _ | Tag _
   | PteVal _ | Instruction _ | Frozen _ ->
       false

@@ -132,6 +132,7 @@ val map :
 
 val mk_sym_physical_label_from_virt : ('scalar,'pte,'instr) t -> ('scalar,'pte,'instr) t
 val mk_sym_virtual_label : Proc.t -> Label.t -> ('scalar,'pte,'instr) t
+val mk_sym_virtual_label_with_offset : Proc.t -> Label.t -> offset -> ('scalar,'pte,'instr) t
 val mk_sym_virtual : string -> ('scalar,'pte,'instr) t
 val mk_sym : string -> ('scalar,'pte,'instr) t
 val mk_sym_with_index : string -> int -> ('scalar, 'pte, 'instr) t
@@ -146,6 +147,7 @@ val mk_replicate : int -> ('scalar,'pte,'instr) t -> ('scalar,'pte,'instr) t
 val is_symbol : ('scalar,'pte,'instr) t -> bool
 val is_data : ('scalar,'pte,'instr) t -> bool
 val is_label : ('scalar,'pte,'instr) t -> bool
+val is_label_pa : ('scalar,'pte,'instr) t -> bool
 (* Extract label, if any *)
 val as_label :  ('scalar,'pte,'instr)  t -> Label.Full.full option
 
