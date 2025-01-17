@@ -353,12 +353,12 @@ let collision s1 s2 = match s1,s2 with
   | _, _ ->
       None
 
-  let rec mk_pp pp_symbol pp_scalar pp_label pp_pteval pp_addrreg pp_instr = function
+  let rec mk_pp pp_symbol pp_scalar pp_pteval pp_addrreg pp_instr = function
   | Concrete i -> pp_scalar i
   | ConcreteVector vs ->
       let s =
         String.concat ","
-          (List.map (mk_pp pp_symbol pp_scalar pp_label pp_pteval pp_addrreg pp_instr) vs)
+          (List.map (mk_pp pp_symbol pp_scalar pp_pteval pp_addrreg pp_instr) vs)
       in
       sprintf "{%s}" s
   | ConcreteRecord vs ->
@@ -367,11 +367,10 @@ let collision s1 s2 = match s1,s2 with
       StringMap.iter
         (fun name c ->
           Printf.bprintf b "%s:%s," name
-            (mk_pp pp_symbol pp_scalar pp_label pp_pteval pp_addrreg pp_instr c))
+            (mk_pp pp_symbol pp_scalar pp_pteval pp_addrreg pp_instr c))
         vs;
       Buffer.add_char b '}';
       Buffer.contents b
-  | Symbolic (Virtual {name=Symbol.Label(p,lbl);_}) -> pp_label p lbl
   | Symbolic sym -> pp_symbol sym
   | Tag s -> sprintf ":%s" s
   | PteVal p -> pp_pteval p
@@ -380,13 +379,11 @@ let collision s1 s2 = match s1,s2 with
   | Frozen i -> sprintf "S%i" i (* Same as for symbolic values? *)
 
 let pp pp_scalar pp_pteval pp_addrreg pp_instr c =
-  let pp_label = sprintf "label:\"P%i:%s\"" in
-  let pp = mk_pp pp_symbol pp_scalar pp_label pp_pteval pp_addrreg pp_instr c in
+  let pp = mk_pp pp_symbol pp_scalar pp_pteval pp_addrreg pp_instr c in
   if _dbg && String.length pp > 6 then "..." else pp
 
 and pp_old pp_scalar pp_pteval pp_addrreg pp_instr =
-  let pp_label = sprintf "%i:%s" in
-  mk_pp pp_symbol_old pp_scalar pp_label pp_pteval pp_addrreg pp_instr
+  mk_pp pp_symbol_old pp_scalar pp_pteval pp_addrreg pp_instr
 
 let check_pp_init dump = function
   | Symbolic sym -> pp_symbol_init sym
@@ -445,11 +442,17 @@ let do_mk_sym sym = match Misc.tr_pte sym with
     | Some s -> Physical (s,0)
     | None -> do_mk_virtual sym
 
+let mk_sym_physical_label_from_virt = function
+  | Symbolic (Virtual {name=Symbol.Label (p,s); offset=o; _ }) ->
+      Symbolic (Physical (sprintf "%i:%s" p s,o))
+  | _ -> assert false
+
 let mk_sym_virtual_label p lbl = Symbolic (do_mk_virtual_label_with_offset p lbl 0)
 let mk_sym_virtual_label_with_offset p lbl o = Symbolic (do_mk_virtual_label_with_offset p lbl o)
-let mk_sym_physical_label_from_virt = function
-  | Symbolic (Virtual {name=Symbol.Label (p,s); _}) ->
-      Symbolic (Physical (sprintf "%i:%s" p s,0))
+
+let unmk_sym_virtual_label_with_offset = function
+  | Symbolic (Virtual {name=Symbol.Label (p,s); offset=o; _})
+      -> (p,s,o)
   | _ -> assert false
 
 let mk_sym_virtual s = Symbolic (do_mk_virtual s)
@@ -518,12 +521,14 @@ let is_label = function
       false
 
 let as_label = function
-  | Symbolic (Virtual ({name=Symbol.Label (p,lbl); _})) -> Some (p,lbl)
+  | Symbolic (Virtual ({name=Symbol.Label (p,lbl); offset=idx; _})) -> assert (idx==0); Some (p,lbl)
   | Concrete _ | ConcreteVector _ | ConcreteRecord _ | Symbolic _ | Tag _
   | PteVal _ | AddrReg _ | Instruction _ | Frozen _ ->
       None
 
 let is_non_mixed_symbol = function
+  | Physical (s,_) when (s |> Symbol.of_string |> Symbol.is_label)
+    -> true
   | Virtual {offset=idx;_}
   | Physical (_,idx)
   | TagAddr (_,_,idx)
@@ -565,8 +570,8 @@ let as_symbolic_data =function
 
 let of_symbolic_data sym = Symbolic (Virtual sym)
 
-let as_pte v = match v with
-| Symbolic (System ((PTE|PTE2),_)) -> Some v
+let as_pte_arg v = match v with
+| Symbolic (System ((PTE|PTE2),arg)) -> Some arg
 | _ -> None
 
 let is_pt v = match v with
