@@ -41,8 +41,26 @@ val npar : int option ref -> spec
 
 val nohash : bool ref -> spec
 
+(** [checkobs b] Build an Arg.spec for setting b to Obs, with documentation
+    as limited test success check. *)
+
+val checkobs : TestHerd.check ref -> spec
+
+(** [checkstates b] Build an Arg.spec for setting b to Sta, with documentation
+    as test success check limited to final states equality. *)
+
+val checkstates : TestHerd.check ref -> spec
+
+(** [verbose b] Build an Arg.spec for setting b to true, with documentation
+    as enable some diagnostics. *)
+
+val verbose : bool ref -> spec
+
 
 (** Validators. *)
+
+(** [test_file name] tests that [s] is not a valid path to a file *)
+val test_file : string -> bool
 
 (** [is_file (k, s, d)] returns [k, s', d], where [s'] wraps [s] with an
  *  Arg.spec that raises Arg.Bad if the argument is not a valid path to a file. *)

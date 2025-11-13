@@ -22,6 +22,7 @@ let check_definition_name name =
 %token CONSTANT
 %token CONSTANTS_SET
 %token FUN
+%token FUNCTION
 %token PARTIAL
 %token LIST0
 %token LIST1
@@ -34,7 +35,10 @@ let check_definition_name name =
 %token PROSE_DESCRIPTION
 %token RENDER
 %token RELATION
+%token SEMANTICS
+%token SHORT_CIRCUIT_MACRO
 %token TYPEDEF
+%token TYPING
 
 (* Punctuation and operator tokens *)
 %token ARROW
@@ -133,23 +137,34 @@ let type_definition :=
         raise (SpecError msg) }
 
 let relation_definition :=
-    RELATION; name=IDENTIFIER; input=plist0(opt_named_type_term); ARROW; output=type_variants;
+    ~=relation_category; ~=relation_property; name=IDENTIFIER; input=plist0(opt_named_type_term); ARROW; output=type_variants;
     attributes=relation_attributes; SEMI;
     {   check_definition_name name;
-        Elem_Relation (Relation.make name input output attributes) }
+        Elem_Relation (Relation.make name relation_property relation_category input output attributes) }
 
 let constant_definition := CONSTANT; name=IDENTIFIER; att=type_attributes; SEMI;
     {   check_definition_name name;
         Elem_Constant (Constant.make name att) }
 
+let relation_property :=
+    | RELATION; { Relation.RelationProperty_Relation }
+    | FUNCTION; { Relation.RelationProperty_Function }
+
+let relation_category :=
+    | { None }
+    | TYPING; { Some Relation.RelationCategory_Typing }
+    | SEMANTICS; { Some Relation.RelationCategory_Semantics }
+
 let type_attributes ==
-    LBRACE; pairs=tclist0(type_attribute); RBRACE; { pairs }
+    | { [] }
+    | LBRACE; pairs=tclist0(type_attribute); RBRACE; { pairs }
 
 let type_attribute :=
     | PROSE_DESCRIPTION; EQ; template=STRING; { (Prose_Description, StringAttribute template) }
     | template=STRING; { (Prose_Description, StringAttribute template) }
     | MATH_MACRO; EQ; macro=LATEX_MACRO; { (Math_Macro, MathMacroAttribute macro) }
     | MATH_LAYOUT; EQ; ~=math_layout; { (Math_Layout, MathLayoutAttribute math_layout) }
+    | SHORT_CIRCUIT_MACRO; EQ; macro=LATEX_MACRO; { (Short_Circuit_Macro, MathMacroAttribute macro) }
 
 let relation_attributes ==
     LBRACE; pairs=tclist0(relation_attribute); RBRACE; { pairs }
@@ -174,8 +189,6 @@ let type_variant := VDASH; term=type_term; { term }
 
 let type_term_with_attributes := ~=type_term; ~=type_attributes;
     { TypeVariant.make TypeKind_Generic type_term type_attributes }
-    | ~=type_term;
-    { TypeVariant.make TypeKind_Generic type_term [] }
 
 let type_term :=
     | name=IDENTIFIER; { check_definition_name name; Label name }

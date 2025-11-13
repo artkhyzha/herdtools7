@@ -20,6 +20,20 @@ a \emph{\staticenvironmentterm{}} and a \emph{typed AST},
 which are used in defining the ASL semantics (\chapref{Semantics}).
 Otherwise, the typechecker returns a \typingerrorterm{}.
 
+\paragraph{Type System Non-determinism:}
+We note that the type system is non-deterministic in the following sense:
+\begin{itemize}
+  \item If a specification is not well-typed due to more than one error, the typechecker
+        may return any one of the possible errors. This is because the global declarations
+        are processed by applying a topological sort to the dependency graph (see \secref{Dependencies}).
+  \item The order of global declarations in the resulting \typedast{} depends on the topological sort
+        of the dependency graph (see \secref{Dependencies}), and thus is non-deterministic.
+  \item If a specification is well-typed the resulting \typedast{} may contain
+        newly generated local storage elements. The identifiers for those elements
+        are not in themselves important as they represent temporary values,
+        and they are not deterministically determined by the type system.
+\end{itemize}
+
 \hypertarget{def-annotaterel}{}
 The type system of ASL is given by the relation $\annotaterel$, which is defined as the disjoint union
 of the functions and relations defined in this reference.
@@ -157,7 +171,7 @@ The output configurations of type system assertions have two flavors:
   \item[Type Errors.] When the type system encounters a \typingerrorterm{},
   for example, using an integer type as a condition expression, as in \verb|if 5 then 1 else 2|,
   the result is a value of the following type:
-\RenderType{type_error}
+  \RenderTypes{type_error_and_codes}
 
   The ASL type system is designed such that when these \emph{\typingerrorterm{} configurations} appear,
   the typing of the entire specification terminates and outputs a \typingerrorterm{} with a code indicating
@@ -170,7 +184,8 @@ The output configurations of type system assertions have two flavors:
 \]
 }
 \hypertarget{type-TypeErrorconfig}{}
-We define the shorthand $\TypeErrorConfig \triangleq \TypeError(\vs)$ for \typingerrorterm{} configurations with any code.
+We define the shorthand $\TypeErrorConfig \triangleq \TypeError(\vc)$ for \typingerrorterm{} configurations
+with any type-error code $\vc \in \typeerrorcode$.
 
 When several \hyperlink{def-caserules}{case rules} for the same function use the same short-circuiting transition assertion,
 we do not repeat the\ProseOrTypeError, but rather include it only in the first rule.

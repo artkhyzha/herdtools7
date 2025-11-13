@@ -221,8 +221,7 @@ module Make
       let read_reg_addr_sz = read_reg_sz  Port.Addr
 
 (* Fetch of an instruction, i.e., a read from a label *)
-      let mk_fetch an loc v =
-        let ac = Access.VIR in (* Instruction fetch seen as ordinary, non PTE, access *)
+      let mk_fetch an ac loc v =
         Act.Access (Dir.R, loc, v, an, AArch64.nexp_ifetch, MachSize.Word, ac)
 
 (* Basic write, to register  *)
@@ -960,26 +959,12 @@ module Make
                 set_afdb m in
             let add_setbits_af ipte m =
               add_setbits (is_zero ipte.af_v) "af:0" set_af m in
-            let setbits =
-              match dir with
-              | Dir.W ->
-                 if hd && updatedb then
-                   add_setbits_db ipte m
-                 else if ha then
-                   add_setbits_af ipte m
-                 else m
-              | Dir.R ->
-                  if hd && updatedb then
-                    (* The case of a failed CAS with no write, but with a db update *)
-                    M.altT (
-                      add_setbits_db ipte m
-                    )( (* no need to check ha, because hd implies ha *)
-                      add_setbits_af ipte m
-                    )
-                  else if ha then
-                    add_setbits_af ipte m
-                 else m in
-            setbits in
+            (* Write or failed CAS with no write, but with a db update *)
+            if hd && updatedb then
+              add_setbits_db ipte m
+            else if ha then
+              add_setbits_af ipte m
+            else m in
           mok m a in
 
 
@@ -1333,6 +1318,56 @@ module Make
         | Some ws -> M.unitT (B.Next ((rd,v) :: ws))
         end
 
+
+(************)
+(* Branches *)
+(************)
+
+      let v2tgt =
+        let open Constant in
+        function
+        | M.A.V.Val (Symbolic (Virtual {name=Symbol.Label (_, lbl); _})) -> Some (B.Lbl lbl)
+        | M.A.V.Val (Concrete i) -> Some (B.Addr (M.A.V.Cst.Scalar.to_int i))
+        | _ -> None
+
+      let do_indirect_jump test bds i ii v =
+        match  v2tgt v with
+        | Some tgt ->
+          commit_bcc ii
+          >>= fun () -> M.unitT (B.Jump (tgt,bds))
+        | None ->
+           match v with
+           | M.A.V.Var(_) as v ->
+              let lbls = get_exported_labels test in
+              if Label.Full.Set.is_empty lbls  then begin
+                if C.variant Variant.Telechat then M.unitT () >>! B.Exit
+                else
+                  Warn.fatal "Could find no potential target for indirect branch %s \
+                    (potential targets are statically known labels)" (AArch64.dump_instruction i)
+                end
+              else
+                commit_bcc ii
+                >>= fun () -> B.indirectBranchT v lbls bds
+        | _ -> Warn.fatal
+            "illegal argument for the indirect branch instruction %s \
+            (must be a label)" (AArch64.dump_instruction i)
+
+      let get_link_addr test ii =
+        let lbl =
+          let a = ii.A.addr + 4 in
+          let lbls = test.Test_herd.entry_points a in
+          Label.norm lbls in
+        match lbl with
+        | Some l -> ii.A.addr2v ii.A.proc l
+        | None ->  V.intToV (ii.A.addr + 4)
+
+      let get_instr_addr proc ii =
+        match Label.norm ii.A.labels with
+        | Some hd -> ii.A.addr2v proc hd
+        | None -> V.intToV ii.A.addr
+
+      let get_instr_label ii = get_instr_addr ii.A.proc ii
+
 (***************************)
 (* Various lift functions. *)
 (***************************)
@@ -1346,13 +1381,11 @@ module Make
  *)
 
 (*  memtag faults *)
-      let get_instr_label ii =
-        match Label.norm ii.A.labels with
-        | Some hd -> ii.A.addr2v hd
-        | None -> V.intToV ii.A.addr
 
       let set_elr_el1 v ii =
         write_reg AArch64Base.elr_el1 v ii
+      and set_esr_el1 v ii =
+        write_reg AArch64Base.esr_el1 v ii
 
       let lift_fault_memtag mfault mm dir ii =
         let lbl_v = get_instr_label ii in
@@ -1386,7 +1419,10 @@ module Make
             fun (r,_) -> M.unitT r
         else m
 
-      let lift_kvm dir updatedb mop ma an ii mphy =
+      let set_elr_el1 v ii =
+        write_reg AArch64Base.elr_el1 v ii
+
+      let lift_kvm dir updatedb mop ma an ii mphy branch =
         let lbl_v = get_instr_label ii in
         let mfault ma a ft =
           insert_commit_to_fault ma
@@ -1395,7 +1431,7 @@ module Make
         let maccess a ma =
           check_ptw ii.AArch64.proc dir updatedb false a ma an ii
             ((let m = mop Access.PTE ma in
-              fire_spurious_af dir a m) >>= M.ignore >>= B.next1T)
+              fire_spurious_af dir a m) |> branch)
             mphy
             mfault in
         M.delay_kont "6" ma (
@@ -1405,8 +1441,10 @@ module Make
              match Act.access_of_location_std (A.Location_global a) with
              | Access.VIR|Access.PTE when not (A.V.is_instrloc a) ->
                  maccess a ma
+             | Access.VIR when (A.V.is_instrloc a) ->
+                 maccess a ma
              | ac ->
-                 mop ac ma >>= M.ignore >>= B.next1T
+                 mop ac ma |> branch
         )
 
       let lift_memtag_phy dir mop ma an ii mphy =
@@ -1417,7 +1455,9 @@ module Make
           and mno mpte_t =
             let ma = M.para_bind_output_right mpte_t (fun _ -> mpte_d) in
             let ft = Some FaultType.AArch64.TagCheck in
-            let mm ma = ma >>= M.ignore >>= B.next1T in
+            let mm ma =
+              let branch = fun m -> m >>= M.ignore >>= B.next1T in
+              ma |> branch in
             let fault = lift_fault_memtag
                 (mk_fault (Some a_virt) dir an ii ft None) mm dir ii in
             fault ma >>! B.fault [] in
@@ -1451,13 +1491,13 @@ module Make
           fun (_,ipte) mpte -> M.choiceT (ipte.tagged_v)
             (checked_op mpte a_virt) (mphy mpte a_virt)
 
-      let lift_memtag_virt mop ma dir an ii =
+      let lift_memtag_virt mop ma dir an ii branch =
         M.delay_kont "5" ma
           (fun a_virt ma  ->
              let mm = mop Access.VIR in
              let ft = Some FaultType.AArch64.TagCheck in
              delayed_check_tags a_virt None ma ii
-               (fun ma -> mm ma >>= M.ignore >>= B.next1T)
+               (fun ma -> mm ma |> branch)
                (lift_fault_memtag
                   (mk_fault (Some a_virt) dir an ii ft None) mm dir ii))
 
@@ -1489,7 +1529,7 @@ module Make
           M.choiceT virt (mcheck ma) (mok ma)
         )
 
-      let lift_morello mop perms ma mv dir an ii =
+      let lift_morello mop perms ma mv dir an ii branch =
         let mfault msg ma mv =
           let ft = None in (* FIXME *)
           do_insert_commit
@@ -1505,7 +1545,7 @@ module Make
                 check_morello_sealed a ma mv
                   (fun ma mv ->
                     check_morello_perms a ma mv perms
-                      (fun ma mv -> mok ma mv >>= M.ignore >>= B.next1T)
+                      (fun ma mv -> mok ma mv |> branch)
                       (mfault "CapPerms"))
                   (mfault "CapSeal"))
               (mfault "CapTag"))
@@ -1525,6 +1565,36 @@ module Make
         | None -> false
         | Some rB -> AArch64.reg_compare rA rB=0
 
+      let do_lift_memop rA (* Base address register *)
+            dir updatedb checked mop perms ma mv an ii (branch : 'a M.t -> branch M.t) =
+        if morello then
+          lift_morello mop perms ma mv dir an ii branch
+        else
+          let mop = apply_mv mop mv in
+          if kvm then
+            let mphy ma a_virt =
+              let ma = get_oa a_virt ma in
+              if pte2 then
+                M.op1 Op.IsVirtual a_virt >>= fun c ->
+                M.choiceT c
+                  (mop Access.PHY ma)
+                  (fire_spurious_af dir a_virt (mop Access.PHY_PTE ma)) |> branch
+              else
+                mop Access.PHY ma
+                |> branch in
+            let mphy =
+              if checked then lift_memtag_phy dir mop ma an ii mphy
+              else mphy
+            in
+            let m = lift_kvm dir updatedb mop ma an ii mphy branch in
+            (* M.short will add an iico_data only if memtag is enabled *)
+            M.short (is_this_reg rA) (E.is_pred_txt (Some "color")) m
+          else if pac then
+            lift_pac_virt mop ma dir an ii
+          else if checked then
+            lift_memtag_virt mop ma dir an ii branch
+          else
+            mop Access.VIR ma |> branch
 
 (*
 Arguments:
@@ -1539,36 +1609,10 @@ Arguments:
 - an:         Annotation for the event structure.
 - ii:         Instruction metadata.
 *)
-      let lift_memop rA dir updatedb checked mop perms ma mv an ii =
-        if morello then
-          lift_morello mop perms ma mv dir an ii
-        else
-          let mop = apply_mv mop mv in
-          if kvm then
-            let mphy ma a_virt =
-              let ma = get_oa a_virt ma in
-              if pte2 then
-                M.op1 Op.IsVirtual a_virt >>= fun c ->
-                M.choiceT c
-                  (mop Access.PHY ma)
-                  (fire_spurious_af dir a_virt (mop Access.PHY_PTE ma))
-                >>= M.ignore >>= B.next1T
-              else
-                mop Access.PHY ma
-                >>= M.ignore >>= B.next1T in
-            let mphy =
-              if checked then lift_memtag_phy dir mop ma an ii mphy
-              else mphy
-            in
-            let m = lift_kvm dir updatedb mop ma an ii mphy in
-            (* M.short will add an iico_data only if memtag is enabled *)
-            M.short (is_this_reg rA) (E.is_pred_txt (Some "color")) m
-          else if pac then
-            lift_pac_virt mop ma dir an ii
-          else if checked then
-            lift_memtag_virt mop ma dir an ii
-          else
-            mop Access.VIR ma >>= M.ignore >>= B.next1T
+      let lift_memop rA (* Base address register *)
+            dir updatedb checked mop perms ma mv an ii =
+        do_lift_memop rA dir updatedb checked mop perms ma mv an ii
+          (fun a -> a >>= M.ignore >>= B.next1T)
 
       (* Address translation instruction *)
       let do_at op rd ii =
@@ -1602,11 +1646,17 @@ Arguments:
 
       let do_ldr rA sz an mop ma ii =
 (* Generic load *)
-        lift_memop rA Dir.R false memtag
+        let checked = memtag && not C.mte_store_only in
+        let ma =
+          (* Extract location without a tag from an address *)
+          if memtag && C.mte_store_only then
+            ma >>= fun a -> loc_extract a
+          else ma in
+        lift_memop rA Dir.R false checked
           (fun ac ma _mv -> (* value fake here *)
             let open Precision in
             let memtag_sync =
-              memtag && (C.mte_precision = Synchronous ||
+              checked && (C.mte_precision = Synchronous ||
                          C.mte_precision = Asymmetric) in
             if memtag_sync || Access.is_physical ac || pac then
               M.bind_ctrldata ma (mop ac)
@@ -2095,6 +2145,64 @@ Arguments:
           (rmw_to_read rmw)
           ii
 
+      let do_cas_fail do_wb sz an rn ma mv mop ii =
+        let action checked ma =
+          let do_action updatedb checked ma =
+              (* Dir.W would force check for dbm bit:                  *)
+              (* - if set then either update or not db bit per R_TXGHB *)
+              (* - if unset raise Permission fault                     *)
+              lift_memop rn Dir.W updatedb checked mop (to_perms "rw" sz) ma mv an ii
+          in
+          if do_wb then
+            do_action true checked ma
+          else begin
+            (* When there is no writeback, It is IMPLEMENTATION SPECIFIC *)
+            (* if there is an update to the dirty bit of the TTD *)
+            let proc = ii.AArch64.proc in
+            let tthm = dirty.DirtyBit.tthm proc
+            and hd = dirty.DirtyBit.hd proc in
+            let may_update_db = tthm && hd in
+            if may_update_db then
+              M.altT (do_action true checked ma) (do_action false checked ma)
+            else
+              do_action false checked ma
+          end
+        in
+
+        if memtag && C.mte_store_only then
+          (* If FEAT_MTE_STORE_ONLY is implemented it is              *)
+          (* CONSTRAINED UNPREDICTABLE whether the Tag Check          *)
+          (* operation is performed.                                  *)
+          M.altT (
+            (* No Tag Check *)
+            (* Extract location without a tag from an address *)
+            let ma = ma >>= fun a -> loc_extract a in
+            action false ma
+          )(
+            (* Tag Check *)
+            action true ma
+          )
+        else
+          action memtag ma
+
+      let do_cas_fail_with_wb = do_cas_fail true
+      let do_cas_fail_no_wb = do_cas_fail false
+
+      let do_cas sz an rn ma mv mop_success mop_fail_with_wb mop_fail_no_wb ii =
+        M.altT (
+          (* CAS succeeds and generates an Explicit Write Effect *)
+          (* there must be an update to the dirty bit of the TTD *)
+          lift_memop rn Dir.W true memtag mop_success (to_perms "rw" sz) ma mv an ii
+        )( (* CAS fails *)
+          M.altT (
+            (* CAS generates an Explicit Write Effect              *)
+            do_cas_fail_with_wb sz an rn ma mv mop_fail_with_wb ii
+          )(
+            (* CAS does not generate an Explicit Write Effect      *)
+            do_cas_fail_no_wb sz an rn ma mv mop_fail_no_wb ii
+          )
+        )
+
       let cas sz rmw rs rt rn ii =
         let an = rmw_to_read rmw in
         let read_rs = read_reg_data_sz sz rs ii
@@ -2134,27 +2242,9 @@ Arguments:
           M.aarch64_cas_ok (Access.is_physical ac) ma read_rs read_rt write_rs
                                 read_mem write_mem branch M.eqT
         in
-        M.altT (
-          (* CAS succeeds and generates an Explicit Write Effect *)
-          (* there must be an update to the dirty bit of the TTD *)
-          lift_memop rn Dir.W true memtag mop_success (to_perms "rw" sz)
-            (read_reg_addr rn ii) (read_reg_data_sz sz rt ii) an ii
-        )( (* CAS fails *)
-          M.altT (
-            (* CAS generates an Explicit Write Effect              *)
-            (* there must be an update to the dirty bit of the TTD *)
-            lift_memop rn Dir.W true memtag mop_fail_with_wb (to_perms "rw" sz)
-              (read_reg_addr rn ii) (read_reg_data_sz sz rt ii) an ii
-          )(
-            (* CAS does not generate an Explicit Write Effect          *)
-            (* It is IMPLEMENTATION SPECIFIC if there is an update to  *)
-            (*                                the dirty bit of the TTD *)
-            (* Note: the combination of dir=Dir.R and updatedb=true    *)
-            (*                    triggers an alternative in check_ptw *)
-            lift_memop rn Dir.R true memtag mop_fail_no_wb (to_perms "rw" sz)
-              (read_reg_addr rn ii) (read_reg_data_sz sz rt ii) an ii
-          )
-        )
+        let ma = read_reg_addr rn ii
+        and mv = read_reg_data_sz sz rt ii in
+        do_cas sz an rn ma mv mop_success mop_fail_with_wb mop_fail_no_wb ii
 
       let casp sz rmw rs1 rs2 rt1 rt2 rn ii =
         let an = rmw_to_read rmw in
@@ -2213,33 +2303,9 @@ Arguments:
           M.aarch64_cas_ok (Access.is_physical ac) ma read_rs
               read_rt write_rs read_mem write_mem branch eqp
         in
-        M.altT (
-          (* CASP succeeds and generates Explicit Write Effects  *)
-          (* there must be an update to the dirty bit of the TTD *)
-          lift_memop rn Dir.W true memtag mop_success
-            (to_perms "rw" sz) (read_reg_addr rn ii)
-            (read_reg_data_sz sz rt1 ii >>> fun _ -> read_reg_data_sz sz rt2 ii)
-            an ii
-        )( (* CASP fails *)
-          M.altT (
-            (* CASP generates Explicit Write Effects               *)
-            (* there must be an update to the dirty bit of the TTD *)
-            lift_memop rn Dir.W true memtag mop_fail_with_wb
-              (to_perms "rw" sz) (read_reg_addr rn ii)
-              (read_reg_data_sz sz rt1 ii >>> fun _ -> read_reg_data_sz sz rt2 ii)
-              an ii
-          )(
-            (* CASP does not generate Explicit Write Effects           *)
-            (* It is IMPLEMENTATION SPECIFIC if there is an update to  *)
-            (*                                the dirty bit of the TTD *)
-            (* Note: the combination of dir=Dir.R and updatedb=true    *)
-            (*                    triggers an alternative in check_ptw *)
-            lift_memop rn Dir.R true memtag mop_fail_no_wb
-              (to_perms "rw" sz) (read_reg_addr rn ii)
-              (read_reg_data_sz sz rt1 ii >>> fun _ -> read_reg_data_sz sz rt2 ii)
-              an ii
-          )
-        )
+        let ma = read_reg_addr rn ii
+        and mv = read_reg_data_sz sz rt1 ii >>> fun _ -> read_reg_data_sz sz rt2 ii in
+        do_cas sz an rn ma mv mop_success mop_fail_with_wb mop_fail_no_wb ii
 
       (* Temporary morello variation of CAS *)
       let cas_morello sz rmw rs rt rn ii =
@@ -2271,7 +2337,7 @@ Arguments:
           (to_perms "rw" sz)
           (read_reg_addr rn ii)
           (read_reg_data_sz sz rt ii)
-          Dir.W (rmw_to_read rmw) ii
+          Dir.W (rmw_to_read rmw) ii (fun a -> a >>= M.ignore >>= B.next1T)
 
       let ldop op sz rmw rs rt rn ii =
         let open AArch64 in
@@ -3405,58 +3471,14 @@ Arguments:
 
       let stzg = do_stzg Once
       and stz2g = do_stzg Twice
+      and st2g = stg Twice
 
 (*********************)
 (* Instruction fetch *)
 (*********************)
 
-      let make_label_value proc lbl_str =
-        A.V.cstToV (Constant.Label (proc, lbl_str))
-
-      let read_loc_instr a ii =
-        M.read_loc Port.No (mk_fetch Annot.N) a ii
-
-(************)
-(* Branches *)
-(************)
-
-      let v2tgt =
-        let open Constant in
-        function
-        | M.A.V.Val(Label (_, lbl)) -> Some (B.Lbl lbl)
-        | M.A.V.Val (Concrete i) -> Some (B.Addr (M.A.V.Cst.Scalar.to_int i))
-        | _ -> None
-
-      let do_indirect_jump test bds i ii v =
-        match  v2tgt v with
-        | Some tgt ->
-          commit_bcc ii
-          >>= fun () -> M.unitT (B.Jump (tgt,bds))
-        | None ->
-           match v with
-           | M.A.V.Var(_) as v ->
-              let lbls = get_exported_labels test in
-              if Label.Full.Set.is_empty lbls  then begin
-                if C.variant Variant.Telechat then M.unitT () >>! B.Exit
-                else
-                  Warn.fatal "Could find no potential target for indirect branch %s \
-                    (potential targets are statically known labels)" (AArch64.dump_instruction i)
-                end
-              else
-                commit_bcc ii
-                >>= fun () -> B.indirectBranchT v lbls bds
-        | _ -> Warn.fatal
-            "illegal argument for the indirect branch instruction %s \
-            (must be a label)" (AArch64.dump_instruction i)
-
-      let get_link_addr test ii =
-        let lbl =
-          let a = ii.A.addr + 4 in
-          let lbls = test.Test_herd.entry_points a in
-          Label.norm lbls in
-        match lbl with
-        | Some l -> ii.A.addr2v l
-        | None ->  V.intToV (ii.A.addr + 4)
+      let read_loc_instr a ac ii =
+        M.read_loc Port.No (mk_fetch Annot.N ac) a ii
 
 (*******************************)
 (* Pointer Authentication Code *)
@@ -3601,7 +3623,8 @@ Arguments:
             >>= do_indirect_jump test [] i ii
 
         | I_ERET ->
-            let eret_to_addr v =
+           let open Constant in
+           let eret_to_addr v =
               match v2tgt v with
               | Some tgt -> B.faultRetT tgt
               | _ ->
@@ -3612,13 +3635,18 @@ Arguments:
              fun () -> read_reg_ord AArch64.elr_el1 ii >>=
              eret_to_addr
 
-        | I_SVC _ ->
+        | I_SVC imm ->
           let (>>!) = M.(>>!) in
           let ft = Some FaultType.AArch64.SupervisorCall in
           let m_fault = mk_fault None Dir.R Annot.N ii ft None in
           let lbl_ret = get_link_addr test ii in
-          m_fault >>| set_elr_el1 lbl_ret ii
-          >>! B.syscall [AArch64Base.elr_el1, lbl_ret]
+          let esr_val =
+            Int64.logor
+              (Int64.shift_left 0b0101011L  25) (* EC:IL for SVC, left shifted by ISS size *)
+              (Int64.of_int imm)
+            |> V.Cst.Scalar.of_int64 |> V.scalarToV in
+          m_fault >>| (set_elr_el1 lbl_ret ii >>| set_esr_el1 esr_val ii)
+          >>! B.syscall [(elr_el1, lbl_ret); (esr_el1, esr_val);]
 
         | I_CBZ(_,r,l) ->
             (read_reg_ord r ii)
@@ -3687,6 +3715,10 @@ Arguments:
         | I_STG(rt,rn,(k,Idx)) ->
             check_memtag "STG" ;
             stg Once rt rn k ii
+        | I_ST2G(rt,rn,(k,Idx)) ->
+          check_memtag "ST2G" ;
+          check_mixed "ST2G" ;
+          st2g rt rn k ii
         | I_LDG (rt,rn,k) ->
             check_memtag "LDG" ;
             ldg rt rn k ii
@@ -4285,7 +4317,7 @@ Arguments:
               (to_perms "tw" MachSize.S128)
               (read_reg_addr rn ii)
               (read_reg_ord rt ii)
-              Dir.W Annot.N ii
+              Dir.W Annot.N ii (fun a -> a >>= M.ignore >>= B.next1T)
         | I_LDCT(rt,rn) ->
             check_morello inst ;
             (* NB: only 1 access implemented out of the 4 *)
@@ -4305,7 +4337,7 @@ Arguments:
               (read_reg_addr rn ii)
               mzero
               Dir.R Annot.N
-              ii
+              ii (fun a -> a >>= M.ignore >>= B.next1T)
         | I_UNSEAL(rd,rn,rm) ->
             check_morello inst ;
             !(begin
@@ -4347,10 +4379,10 @@ Arguments:
            begin
              match lbl with
              | Some lbl ->
-                let v = ii.A.addr2v lbl in
+                let v = ii.A.addr2v ii.A.proc lbl in
                 write_reg_dest r v ii >>= nextSet r
              | None ->
-                (* Delay error,  only a poor fix.
+                (* Delay error, only a poor fix.
                    A complete possible fix would be
                    having code addresses as values *)
                 M.failT
@@ -4597,7 +4629,7 @@ Arguments:
             do_xpac r ii
 (*  Cannot handle *)
         (* | I_BL _|I_BLR _|I_BR _|I_RET _ *)
-        | (I_STG _|I_STZG _|I_STZ2G _
+        | (I_STG _|I_ST2G _|I_STZG _|I_STZ2G _
         | I_OP3_SIMD _ | I_OP3_SV _
         | I_LDR_SIMD _| I_STR_SIMD _
         | I_LD1SP _| I_LD2SP _| I_LD3SP _| I_LD4SP _
@@ -4617,57 +4649,188 @@ Arguments:
             | _ -> k)
           test.Test_herd.init_state []
 
+      let get_instr_ptevals test =
+        let open Constant in
+        let open AArch64PteVal in
+        AArch64.state_fold
+          (fun _ v k ->
+            match v with
+            | V.Val (PteVal pte_v) -> begin
+              let lbl_opt =
+                pte_v.oa
+                |> OutputAddress.as_physical
+                |> fun o -> Option.bind o Misc.str_as_label in
+              match lbl_opt with
+              | Some lbl -> lbl::k
+              | None -> k
+              end
+            | _ -> k)
+          test.Test_herd.init_state []
+
+      let lift_fetch rA (* Base address register *)
+            dir updatedb
+            mop
+            perms ma mv an ii =
+        do_lift_memop rA dir updatedb false mop perms ma mv an ii Fun.id
+
+(* Test all possible instructions, when appropriate *)
+      let mk_mop_fetch exposed_page exposed_label test ii =
+        let module InstrSet = AArch64.V.Cst.Instr.Set in
+        (* let this_pagelbl_addr =
+          let addr_part = ii.A.addr mod Pseudo.proc_size in
+          let proc_part = ii.A.addr - addr_part in
+          let page_addr = proc_part + (addr_part / Pseudo.page_size) * Pseudo.page_size in
+          page_addr in *)
+        let relevant_pagelbls = get_instr_ptevals test
+          (* map labels into VAs *)
+        in
+        (*
+        Printf.printf "# Debug output for %d::%s is:" ii.A.addr (A.pp_instruction PPMode.Ascii ii.A.inst);
+        List.iter (fun a -> Printf.printf " %d" a) (List.map (fun (p,lbl) -> Label.Map.find lbl test.program) relevant_pagelbls);
+        Printf.printf "\n";
+        *)
+        let default_cands =
+          InstrSet.empty
+          |> InstrSet.add ii.A.inst
+        in
+        let exposed_page_cands =
+          (* When an address can get remapped, consider the possibility of
+           * fetching instructions from other relevant pages *)
+          if exposed_page then
+            let offset = (ii.A.addr mod Pseudo.proc_size) mod Pseudo.page_size in
+            relevant_pagelbls
+            |> List.map (fun (_,lbl) ->
+                let base = Label.Map.find lbl test.Test_herd.program in
+                let cand_a = base + offset in
+                let cand_i = match IntMap.find cand_a test.Test_herd.code_segment with
+                | (_,(_,i)::_) -> i
+                | _ -> Warn.user_error "Instruction not found by the address %d" cand_a
+                in
+                cand_i)
+             |> InstrSet.of_list
+          else InstrSet.empty
+        in
+        let potentially_exposed_label =
+          (* When an address can get remapped, check if the possible remapped
+           * addresses needs the ifetch logic *)
+          let no_remap_case = exposed_label ii.A.addr in
+          if exposed_page then
+            let offset = (ii.A.addr mod Pseudo.proc_size) mod Pseudo.page_size in
+            relevant_pagelbls
+            |> List.map (fun (_,lbl) ->
+                let base = Label.Map.find lbl test.Test_herd.program in
+                let cand_a = base + offset in
+                exposed_label cand_a)
+            |> List.fold_left (fun acc a -> acc || a) no_remap_case
+          else no_remap_case
+        in
+        let exposed_label_cands =
+          (if potentially_exposed_label then
+            get_overwriting_instrs test
+            |> InstrSet.of_list (* optimization to consider only possible instruction overwrites *)
+            |> InstrSet.filter AArch64.can_overwrite (* for testing purposes *)
+          else InstrSet.empty)
+        in
+        let cands =
+          default_cands
+          |> InstrSet.union exposed_page_cands
+          |> InstrSet.union exposed_label_cands
+        in
+        (* Shadow default control sequencing operator *)
+        let(>>*=) = M.bind_control_set_data_input_first in
+        let mop ac a =
+          read_loc_instr (A.Location_global a) ac ii
+          >>= fun actual_val ->
+            InstrSet.fold
+              (fun inst k ->
+                M.op Op.Eq actual_val (V.instructionToV inst) >>==
+                fun cond -> M.choiceT cond
+                    (commit_pred ii >>*=
+                      fun () -> do_build_semantics test inst ii)
+                    k)
+              cands
+              begin
+              (* Anything else than a legit instruction is a failure *)
+                let (>>!) = M.(>>!) in
+                let m_fault = mk_fault None Dir.R Annot.N ii
+                    (Some FaultType.AArch64.UndefinedInstruction)
+                    (Some "Invalid") in
+                let lbl_v = get_instr_label ii in
+                commit_pred ii
+                  >>*= fun () -> m_fault >>| set_elr_el1 lbl_v ii
+                  >>! B.Fault (false,[AArch64Base.elr_el1, lbl_v])
+              end in
+        fun ac ma _ -> ( (* value fake here *)
+          if Access.is_physical ac then begin
+            (* Printf.eprintf "### Physical ifetch!\n"; *)
+            M.bind_ctrldata ma (mop ac)
+          end else begin
+            (* Printf.eprintf "### Virtual ifetch!\n"; *)
+            ma >>= mop ac
+          end
+        )
 
 (* Test all possible instructions, when appropriate *)
       let check_self test ii =
+        (* assert (ii.A.fetch_proc = ii.A.proc) ; *)
         let module InstrSet = AArch64.V.Cst.Instr.Set in
-        let inst = ii.A.inst in
-        let lbls = get_exported_labels test in
-        let is_exported =
+        let exp_pages = get_exported_code_pages test in
+        (* Printf.printf "Exported TTD destinations:";
+        List.iter (fun v -> Printf.printf " %s" (A.V.Cst.pp false v)
+          ) exp_pages;
+        Printf.printf "\n"; *)
+        let is_on_exported_page =
+          match ii.A.rel_addr with
+          | Some (A.V.Val c) -> begin
+            let this_lbl = c in 
+            List.exists
+              (fun ttd_lbl ->
+                let this_triple = Constant.unmk_sym_virtual_label_with_offset this_lbl in
+                let ttd_triple = Constant.unmk_sym_virtual_label_with_offset ttd_lbl in
+                (* Printf.eprintf "\nComparing %s and %s\n" (A.V.Cst.pp false this_lbl) (A.V.Cst.pp false ttd_lbl); *)
+                match (this_triple,ttd_triple) with
+                | (p1,s1,_),(p2,s2,_) ->
+                  (Misc.int_eq p1 p2) && (Misc.string_eq s1 s2)
+              ) exp_pages
+            end
+          | _ ->
+            false
+        in
+        let lbl_exposed addr =
+          let labels = test.Test_herd.entry_points addr in
           Label.Set.exists
             (fun lbl ->
               Label.Full.Set.exists
                 (fun (_,lbl0) -> Misc.string_eq lbl lbl0)
-                lbls)
-            ii.A.labels in
-        if is_exported then
-          match Label.norm ii.A.labels with
-          | None -> assert false
-          | Some hd ->
-              let insts =
-                InstrSet.of_list
-                  (get_overwriting_instrs test) in
-              let insts =
-                InstrSet.add inst (InstrSet.filter AArch64.can_overwrite insts) in
-              (* Shadow default control sequencing operator *)
-              let(>>*=) = M.bind_control_set_data_input_first in
-              let a_v = make_label_value ii.A.fetch_proc hd in
-              let a = (* Normalised address of instruction *)
-                A.Location_global a_v in
-              read_loc_instr a ii
-                >>= fun actual_val ->
-                  InstrSet.fold
-                    (fun inst k ->
-                      M.op Op.Eq actual_val (V.instructionToV inst) >>==
-                      fun cond -> M.choiceT cond
-                          (commit_pred ii >>*=
-                            fun () -> do_build_semantics test inst ii)
-                          k)
-                    insts
-                    begin
-  (* Anything else than a legit instruction is a failure *)
-                      let (>>!) = M.(>>!) in
-                      let m_fault =
-                        mk_fault
-                          None Dir.R Annot.N ii
-                          (Some FaultType.AArch64.UndefinedInstruction)
-                          (Some "Invalid") in
-                      let lbl_v = get_instr_label ii in
-                      commit_pred ii
-                        >>*= fun () -> m_fault >>| set_elr_el1 lbl_v ii
-                        >>! B.fault [AArch64Base.elr_el1, lbl_v]
-                    end
-        else do_build_semantics test inst ii
+                (get_exported_labels test))
+            labels in
+        (* Printf.printf "Instruction %s at address %d on an %s page and at an %s label\n" (A.pp_instruction PPMode.Ascii ii.A.inst) ii.A.addr (if is_on_exported_page then "exported" else "unexported")
+        (if is_exported then "exported" else "unexported")
+        ; *)
+        let needs_vmsa_for_ifetch =
+          kvm && self && is_on_exported_page in
+        let needs_ifetch = (lbl_exposed ii.A.addr) && self in
+        (* if needs_vmsa_for_ifetch then *)
+        if needs_ifetch || needs_vmsa_for_ifetch then
+          try (
+            let mop_fetch = mk_mop_fetch is_on_exported_page lbl_exposed test ii in
+            let a_v =
+              if needs_vmsa_for_ifetch then begin
+                Option.get ii.A.rel_addr
+              end else get_instr_addr ii.A.fetch_proc ii
+            in
+            lift_fetch AArch64.ZR Dir.R true
+              mop_fetch
+              (to_perms "r" MachSize.Word)
+            (M.unitT a_v) mzero Annot.N ii
+          ) with
+            | Not_found -> begin
+              Warn.warn_always "Not_found error\n";
+              do_build_semantics test ii.A.inst ii
+              end
+            | Invalid_argument _ -> Warn.user_error "Invalid argument error\n"
+        else
+          do_build_semantics test ii.A.inst ii
 
       let build_semantics test ii =
         M.addT (A.next_po_index ii.A.program_order_index)

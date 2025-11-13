@@ -1127,9 +1127,11 @@ module Make (B : Backend.S) (C : Config) = struct
         let n = List.length ldis in
         let* vm = m_init in
         let liv = List.init n (fun i -> B.return vm >>= B.get_index i) in
+        (* Begin DeclareLDITuple( *)
         let folder envm x vm =
           let**| env = envm in
           vm >>= declare_local_identifier env x >>= return_normal
+          (* Begin DeclareLDITuple) *)
         in
         List.fold_left2 folder (return_normal env) ldis liv
         |: SemanticsRule.LDTuple
@@ -1578,6 +1580,7 @@ module Make (B : Backend.S) (C : Config) = struct
          let () =
            if false then Format.eprintf "Finished evaluating %s.@." name
          in
+         (* MatchFuncRest( *)
          match res with
          | Continuing env4 -> return_normal ([], env4.global)
          | Returning (xs, ret_genv) ->
@@ -1585,6 +1588,7 @@ module Make (B : Backend.S) (C : Config) = struct
                List.mapi (fun i v -> (v, return_identifier i, scope)) xs
              in
              return_normal (vs, ret_genv))
+        (* MatchFuncRest) *)
         |: SemanticsRule.FCall
   (* End *)
 

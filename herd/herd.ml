@@ -438,6 +438,7 @@ let () =
     let statelessrc11 = !statelessrc11
     let dumpallfaults = !dumpallfaults
 
+    let hash = HashInfo.Std
     let check_name = Check.ok
     let check_rename = Check.rename_opt
     let check_kind = TblRename.find_value_opt kinds
@@ -464,6 +465,7 @@ let () =
     let variant = !variant
     let fault_handling = !Refs.fault_handling
     let mte_precision = !Refs.mte_precision
+    let mte_store_only = !Refs.mte_store_only
     let sve_vector_length = !Refs.sve_vector_length
     let sme_vector_length = !Refs.sme_vector_length
   let byte = !byte
@@ -573,6 +575,7 @@ let () =
     let module T =
       ParseTest.Top
         (struct
+          include GenParser.DefaultConfig
           let bell_model_info = bi
           include Config end) in
     SymbValue.reset_gensym () ;

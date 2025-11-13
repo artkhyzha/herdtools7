@@ -27,7 +27,7 @@ HERD_DIYCROSS_REGRESSION_TEST = _build/default/internal/herd_diycross_regression
 HERD_CATALOGUE_REGRESSION_TEST = _build/default/internal/herd_catalogue_regression_test.exe
 BENTO                         = _build/default/tools/bento.exe
 ASLREF                        = _build/default/asllib/aslref.exe
-
+CHECK_OBS                     = _build/default/internal/check_obs.exe
 all: build
 
 .PHONY: Version.ml
@@ -96,6 +96,20 @@ test.aarch64:
 		-litmus-dir ./herd/tests/instructions/AArch64 \
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 AArch64 instructions tests: OK"
+
+test:: test.aarch64.asl
+test-all-asl:: test.aarch64.asl
+test.aarch64.asl: asl-pseudocode
+	@ echo
+	$(HERD_REGRESSION_TEST) \
+		-j $(J) \
+		-herd-path $(HERD) \
+		-libdir-path ./herd/libdir \
+		-litmus-dir ./herd/tests/instructions/AArch64 \
+		-conf ./herd/tests/instructions/AArch64/asl.cfg \
+		-checkstates \
+		$(REGRESSION_TEST_MODE)
+	@ echo "herd7 AArch64 instructions tests (ASL): OK"
 
 test:: test.riscv
 test-local:: test.riscv
@@ -169,6 +183,7 @@ test.sve::
 
 test:: test.asl.sve
 test-local:: test.asl.sve
+test-all-asl:: test.asl.sve
 test.asl.sve: asl-pseudocode
 	@ echo
 	$(HERD_REGRESSION_TEST) \
@@ -232,6 +247,7 @@ test.kvm:
 
 test:: test-asl-vmsa
 test-asl-vmsa:: test.kvm.asl
+test-all-asl:: test.kvm.asl
 test.kvm.asl: asl-pseudocode
 	@ echo
 	$(HERD_REGRESSION_TEST) \
@@ -268,6 +284,7 @@ test-ppc:
 
 test:: test-asl
 test-local:: test-asl
+test-all-asl:: test-asl
 test-asl: asl-pseudocode
 	@ echo
 	$(HERD_REGRESSION_TEST) \
@@ -280,6 +297,7 @@ test-asl: asl-pseudocode
 
 test:: test-pseudo-asl
 test-local:: test-pseudo-asl
+test-all-asl:: test-pseudo-asl
 test-pseudo-asl:
 	@ echo
 	$(HERD_REGRESSION_TEST) \
@@ -292,7 +310,7 @@ test-pseudo-asl:
 	@ echo "herd7 ASL instructions tests on pseudo-architecture: OK"
 
 test:: test-aarch64-asl
-
+test-all-asl:: test-aarch64-asl
 test-aarch64-asl: asl-pseudocode
 	@echo
 	$(HERD_REGRESSION_TEST) \
@@ -387,6 +405,7 @@ diymicro-test-aarch64:
 	@ echo "herd7 AArch64 diymicro7 tests: OK"
 
 test-all:: diymicro-test-aarch64-asl
+test-all-asl:: diymicro-test-aarch64-asl
 diymicro-test-aarch64-asl: asl-pseudocode
 	$(eval DIYMICRO_EDGES = $(shell $(DIYMICROENUM) -list-iico | sed -n 's/^iico\[\([^ ]*\).*/iico[\1]/p'))
 	$(eval DIYMICRO_EDGES_ARG := $(foreach arg,$(DIYMICRO_EDGES),-diycross-arg $(arg)))
@@ -402,24 +421,9 @@ diymicro-test-aarch64-asl: asl-pseudocode
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 AArch64 diymicro7 (ASL) tests: OK"
 
-.PHONY: opam-install
-opam-install:
+test-bnfc:
 	@ echo
-	@ echo "Installing herdtools as an opam package"
-	opam install .
-	@ echo "Installed."
-
-ASLLIB_PARSER_CMLY := _build/default/asllib/Parser.cmly
-
-.PHONY: test-bnfc
-test-bnfc: opam-install
-	@ echo
-	dune build --profile $(DUNE_PROFILE) $(ASLLIB_PARSER_CMLY)
-	$(MAKE) \
-		-C asllib/menhir2bnfc \
-		HERDTOOLS_SOURCE=$(CURDIR) \
-		ASLLIB_PARSER_CMLY=$(abspath $(ASLLIB_PARSER_CMLY)) \
-		test
+	dune runtest asllib/menhir2bnfc
 	@ echo "BNFC tests: OK"
 
 test:: test.pac
@@ -440,6 +444,9 @@ CATATEST := $(shell if test -d catalogue; then echo cata-test; fi)
 
 test:: $(CATATEST)
 test-local:: $(CATATEST)
+
+test-all:: cata-test cata-test-asl
+test-all-asl:: cata-test-asl
 
 cata-test:: cata-bpf-test
 cata-bpf-test:
@@ -467,7 +474,6 @@ cata-aarch64-test:
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 catalogue aarch64 tests: OK"
 
-test-all:: cata-aarch64-test-asl
 cata-test-asl:: cata-aarch64-test-asl
 cata-aarch64-test-asl: asl-pseudocode
 	@ echo
@@ -484,7 +490,6 @@ cata-aarch64-test-asl: asl-pseudocode
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 catalogue aarch64 tests (ASL): OK"
 
-test-all:: cata-aarch64-cas-test-asl
 cata-test-asl:: cata-aarch64-cas-test-asl
 cata-aarch64-cas-test-asl: asl-pseudocode
 	@ echo
@@ -539,7 +544,6 @@ pick-test:
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 catalogue aarch64-pick tests: OK"
 
-test-all:: pick-test-asl
 cata-test-asl:: pick-test-asl
 pick-test-asl:  asl-pseudocode
 	@ echo
@@ -567,8 +571,8 @@ faults-test:
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 catalogue aarch64-faults tests: OK"
 
-
-asl-faults-test:
+cata-test-asl:: asl-faults-test
+asl-faults-test: asl-pseudocode
 	@ echo
 	$(HERD_CATALOGUE_REGRESSION_TEST) \
 		-j $(J) \
@@ -576,9 +580,9 @@ asl-faults-test:
 		-libdir-path ./herd/libdir \
 		-kinds-path catalogue/aarch64-faults/tests/kinds.txt \
 		-shelf-path catalogue/aarch64-faults/shelf.py \
-		-variant asl,strict,d128 \
+		-conf-path  catalogue/aarch64-faults/cfgs/asl.cfg \
 		$(REGRESSION_TEST_MODE)
-	@ echo "herd7 catalogue aarch64-faults tests: OK"
+	@ echo "herd7 catalogue aarch64-faults tests (ASL): OK"
 
 cata-test:: pick-test-mixed
 pick-test-mixed:
@@ -621,6 +625,7 @@ ifetch-test:
 		@ echo "herd7 catalogue aarch64-ifetch tests: OK"
 
 
+# Not in cata-test, too-long
 test-all:: vmsa-test
 vmsa-test:
 	@ echo
@@ -634,9 +639,13 @@ vmsa-test:
 		$(REGRESSION_TEST_MODE)
 		@ echo "herd7 catalogue aarch64-VMSA tests: OK"
 
+
+#Too long to include in `make test-all` -verbose active to reassure us that something is running
+test-all-asl:: cata-asl-vmsa-test
 cata-asl-vmsa-test: asl-pseudocode
 	@ echo
 	$(HERD_CATALOGUE_REGRESSION_TEST) \
+		-verbose \
 		-j $(J) \
 		-herd-path $(HERD) \
 		-herd-timeout $(TIMEOUT) \
@@ -673,6 +682,7 @@ ets2-test:
 		$(REGRESSION_TEST_MODE)
 		@ echo "herd7 catalogue aarch64-ETS2 tests: OK"
 
+test-all:: test.vmsa+mte
 test.vmsa+mte:
 	@ echo
 	$(HERD_REGRESSION_TEST) \
@@ -682,6 +692,18 @@ test.vmsa+mte:
 		-conf ./herd/tests/instructions/AArch64.vmsa+mte/vmsa+mte.cfg \
 		$(REGRESSION_TEST_MODE)
 	@ echo "herd7 AArch64 VMSA+MTE instructions tests: OK"
+
+test:: test.vmsa+ifetch
+test-local:: test.vmsa+ifetch
+test.vmsa+ifetch:
+	@ echo
+	$(HERD_REGRESSION_TEST) \
+		-herd-path $(HERD) \
+		-libdir-path ./herd/libdir \
+		-litmus-dir ./herd/tests/instructions/AArch64.vmsa+ifetch \
+		-conf ./herd/tests/instructions/AArch64.vmsa+ifetch/vmsa+ifetch.cfg \
+		$(REGRESSION_TEST_MODE)
+	@ echo "herd7 AArch64 VMSA+ifetch instructions tests: OK"
 
 test:: diy-test diymicro-test
 test-local:: diy-test diymicro-test
@@ -883,7 +905,7 @@ diy-test-C:
 asl-pseudocode: herd/libdir/asl-pseudocode/shared_pseudocode.asl
 
 herd/libdir/asl-pseudocode/shared_pseudocode.asl:
-	@ $(MAKE) -C $(@D) a64 clean-tmp
+	@ $(MAKE) -C $(@D) all clean-tmp
 
 .PHONY: clean-asl-pseudocode
 clean-asl-pseudocode:

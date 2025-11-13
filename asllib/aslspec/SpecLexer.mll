@@ -34,6 +34,7 @@ rule token = parse
     | "ast"               { AST }
     | "constant"          { CONSTANT }
     | "constants_set"     { CONSTANTS_SET }
+    | "function"          { FUNCTION }
     | "list0"             { LIST0 }
     | "list1"             { LIST1 }
     | "math_macro"        { MATH_MACRO }
@@ -47,7 +48,10 @@ rule token = parse
     | "prose_description" { PROSE_DESCRIPTION }
     | "relation"          { RELATION }
     | "render"            { RENDER }
+    | "semantics"         { SEMANTICS }
+    | "short_circuit_macro" { SHORT_CIRCUIT_MACRO }
     | "typedef"           { TYPEDEF }
+    | "typing"            { TYPING }
 
     (* Punctuation and operators *)
     | ','            { COMMA }

@@ -446,6 +446,7 @@ match name with
 | "udf"|"UDF" -> UDF
 (* Memory Tagging *)
 | "stg"|"STG" -> STG
+| "st2g"|"ST2G" -> ST2G
 | "stzg"|"STZG" -> STZG
 | "stz2g"|"STZ2G" -> STZ2G
 | "ldg"|"LDG" -> LDG
@@ -784,6 +785,7 @@ rule token = parse
 | "regions" { REGIONS }
 | '&' (name as x) { META x }
 | "codevar:" (name as x) { CODEVAR x }
+| ".pagealign" { DOTPAGEALIGN }
 | name as x  { check_name x }
 | eof { EOF }
 | ""  { error "AArch64 lexer" lexbuf }

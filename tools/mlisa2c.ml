@@ -164,6 +164,9 @@ module Top(O:Config)(Out:OutTests.S) = struct
     | BellBase.Label (lab,i) -> CBase.Label (lab,tr_pseudo tr i)
     | BellBase.Macro (f,es) -> CBase.Macro (f,List.map tr_reg es)
     | BellBase.Symbolic s -> CBase.Symbolic s
+    | BellBase.Pagealign | BellBase.Skip _ ->
+      (* this functionality is not yet supported outside of AArch64 *)
+      assert false
 
   let ptr_type =
     let open CType in
@@ -226,7 +229,8 @@ module Top(O:Config)(Out:OutTests.S) = struct
           let lexer = L.token
           let parser = LISAParser.main
         end in
-        let module P = GenParser.Make(GenParser.DefaultConfig)(Bell)(BellLexParse) in
+        let module P =
+          GenParser.Make(GenParser.DefaultConfig)(Bell)(BellLexParse) in
         let parsed = P.parse chan splitted in
         let name = splitted.Splitter.name in
         tr_test idx_out name parsed

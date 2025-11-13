@@ -46,6 +46,7 @@ type t =
 (* Tags *)
   | MemTag
   | MTEPrecision of Precision.t (* MTE tag mismatch handling *)
+  | MTEStoreOnly
   | FaultHandling of Fault.Handling.t (* Fault handling *)
   | CutOff
   | Morello
@@ -63,6 +64,7 @@ type t =
   | ETS (*Deprecated*)
   | ETS2 (*New feature introduced after deprecating ETS*)
   | ETS3 (*A feature further strengthening ETS2*)
+  | ETS4
 (* AArch64: Enhanced Exception Synchronization - FEAT_ExS *)
   | ExS | EIS | EOS
 (* Do not insert branching event between pte read and accesses *)
@@ -152,6 +154,7 @@ let parse s = match Misc.lowercase s with
 | "lkmmv1" -> Some (LKMMVersion `lkmmv1)
 | "lkmmv2" -> Some (LKMMVersion `lkmmv2)
 | "tagmem"|"memtag"|"mte" -> Some MemTag
+| "store-only" -> Some MTEStoreOnly
 | "cutoff" -> Some CutOff
 | "morello" -> Some Morello
 | "neon" -> Some Neon
@@ -164,6 +167,7 @@ let parse s = match Misc.lowercase s with
 | "ets" -> Some ETS
 | "ets2" -> Some ETS2
 | "ets3" -> Some ETS3
+| "ets4" -> Some ETS4
 | "exs" -> Some ExS
 | "eis" -> Some EIS
 | "eos" -> Some EOS
@@ -254,6 +258,7 @@ let pp = function
   | LKMMVersion `lkmmv2 -> "lkmmv2"
   | MemTag -> "memtag"
   | MTEPrecision p -> Precision.pp p
+  | MTEStoreOnly -> "store-only"
   | FaultHandling p -> Fault.Handling.pp p
   | CutOff -> "CutOff"
   | Morello -> "Morello"
@@ -268,6 +273,7 @@ let pp = function
   | ETS -> "ets"
   | ETS2 -> "ets2"
   | ETS3 -> "ets3"
+  | ETS4 -> "ets4"
   | ExS -> "exs"
   | EIS -> "eis"
   | EOS -> "eos"
@@ -331,6 +337,10 @@ let set_fault_handling r = function
 
 let set_mte_precision r = function
   | MTEPrecision p -> r := p; true
+  | _ -> false
+
+let set_mte_store_only r = function
+  | MTEStoreOnly -> r := true; true
   | _ -> false
 
 let check_vector_length memo n =

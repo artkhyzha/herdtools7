@@ -44,6 +44,7 @@ type t =
   | DontCheckMixed
   | MemTag           (* Memory Tagging, synonym of MTE *)
   | MTEPrecision of Precision.t (* MTE tag mismatch handling *)
+  | MTEStoreOnly     (* Load instructions are Tag Unchecked *)
   | FaultHandling of Fault.Handling.t (* Fault handling *)
   | CutOff
   | Morello
@@ -61,6 +62,7 @@ type t =
   | ETS (*Deprecated*)
   | ETS2 (*New feature introduced after deprecating ETS*)
   | ETS3 (*A feature further strengthening ETS2*)
+  | ETS4
 (* AArch64: Enhanced Exception Synchronization - FEAT_ExS *)
   | ExS | EIS | EOS
 (* Do not insert branching event between pte read and accesses *)
@@ -135,6 +137,7 @@ val get_default :  Archs.t -> t -> bool
 val get_switch : Archs.t -> t -> (t -> bool) -> bool
 
 val set_mte_precision : Precision.t ref -> t -> bool
+val set_mte_store_only : bool ref -> t -> bool
 val set_fault_handling : Fault.Handling.t ref -> t -> bool
 
 val set_sve_length : int ref -> t -> t option

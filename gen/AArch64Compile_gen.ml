@@ -1787,6 +1787,12 @@ module Make(Cfg:Config) : XXXCompile_gen.S =
             assert (Misc.is_none m) ;
             Some (a,Some (MachSize.S128,0))
           | _ -> Some (a,m) end in
+        (* Compile the node.
+           - `regs`, registers
+           - `inits`, initial values
+           - `cs`, instructions
+           - `st`, states
+        *)
         let regs,inits,cs,st = begin match d,atom with
         | R,None ->
             let r,init,cs,st = LDR.emit_load st p init loc in
@@ -2170,14 +2176,25 @@ module Make(Cfg:Config) : XXXCompile_gen.S =
          I_FENCE (DSB (ISH,FULL))::
          (if isb then [I_FENCE ISB] else []))
 
-    let emit_shootdown dom op sync r =
-      match sync with
-      | Sync ->
-         pseudo
-           (I_FENCE (DSB(dom,FULL))::
-            I_TLBI(op,r)::I_FENCE (DSB(dom,FULL))::[])
-      | NoSync ->
-         pseudo (I_TLBI(op,r)::[])
+    let emit_shootdown_prefix st p init n op =
+      let loc = match n.C.evt.C.loc with
+      | Data loc -> loc
+      | Code _ -> Warn.user_error "TLBI/CacheSync" in
+      let open TLBI in
+      match op.TLBI.typ with
+      | ALL|VMALL|VMALLS12 -> ZR,init,[],st
+      | ASID|VA|VAL|VAA|VAAL|IPAS2|IPAS2L ->
+        let r,init,st = U.next_init st p init loc in
+        let r1,st = tempo1 st in
+        let cs = [Instruction (lsri64 r1 r 12)] in
+        r1,init,cs,st
+
+    let emit_shootdown_sync dom op r =
+      pseudo
+        (I_FENCE (DSB(dom,FULL))::
+        I_TLBI(op,r)::I_FENCE (DSB(dom,FULL))::[])
+
+    let emit_shootdown_nosync op r = pseudo (I_TLBI(op,r)::[])
 
     let emit_CMO t r = match t with
       | DC_CVAU -> pseudo ([I_DC (DC.cvau, r)])
@@ -2185,23 +2202,14 @@ module Make(Cfg:Config) : XXXCompile_gen.S =
 
     let emit_fence st p init n f = match f with
     | Barrier f -> init,[Instruction (I_FENCE f)],st
-    | Shootdown(dom,op,sync) ->
-        let loc = match n.C.evt.C.loc with
-        | Data loc -> loc
-        | Code _ -> Warn.user_error "TLBI/CacheSync" in
-        let open TLBI in
-        let r,init,csr,st =  match op.TLBI.typ with
-        | ALL|VMALL|VMALLS12
-            ->
-              ZR,init,[],st
-        | ASID|VA|VAL|VAA|VAAL|IPAS2|IPAS2L
-            ->
-              let r,init,st = U.next_init st p init loc in
-              let r1,st = tempo1 st in
-              let cs = [Instruction (lsri64 r1 r 12)] in
-              r1,init,cs,st in
-        let cs = emit_shootdown dom op sync r in
-        init,csr@cs,st
+    | ShootdownSync (dom,op) ->
+      let r,init,csr,st = emit_shootdown_prefix st p init n op in
+      let cs = emit_shootdown_sync dom op r in
+      init,csr@cs,st
+    | ShootdownNoSync (op) ->
+      let r,init,csr,st = emit_shootdown_prefix st p init n op in
+      let cs = emit_shootdown_nosync op r in
+      init,csr@cs,st
     | CacheSync (s,isb) -> begin
         try
           let lab = C.find_prev_code_write n in

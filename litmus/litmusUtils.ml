@@ -62,6 +62,8 @@ module Pseudo(A:Arch_litmus.S) = struct
         "%s(%s)"
         f
         (String.concat "," (List.map A.pp_reg regs))
+  | A.Pagealign -> ".pagealign"
+  | A.Skip _ -> assert false
 
   let dump_prog _ (p,is) = MiscParser.pp_proc  p::List.map fmt_io is
 
@@ -83,7 +85,7 @@ module Pseudo(A:Arch_litmus.S) = struct
  * ARM "ADR" instruction.
  *)
 
-  module AU = ArchUtils.Make(A)(A.V.Instr)
+  module AU = ArchUtils.Make(A)
 
   let exported_labels_code prog = AU.get_exported_labels_code prog
 

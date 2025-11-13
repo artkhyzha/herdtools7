@@ -65,6 +65,7 @@ let check_op3 op e =
 %token <string> META
 %token <string> CODEVAR
 %token <int> PROC
+%token DOTPAGEALIGN
 
 %token SEMI COMMA PIPE COLON DOT BANG LCRL RCRL LBRK RBRK LPAR RPAR SCOPES LEVELS REGIONS
 
@@ -158,7 +159,7 @@ let check_op3 op e =
 %token MRS MSR TST RBIT ABS
 %token REV16 REV32 REV REV64
 %token EXTR
-%token STG STZG STZ2G LDG
+%token STG ST2G STZG STZ2G LDG
 %token ALIGND ALIGNU BUILD CHKEQ CHKSLD CHKTGD CLRTAG CPY CPYTYPE CPYVALUE CSEAL
 %token LDCT SEAL STCT UNSEAL
 %type <MiscParser.proc list * (AArch64Base.parsedPseudo) list list * MiscParser.extra_data> main
@@ -171,7 +172,6 @@ let check_op3 op e =
 
 %start one_instr
 %type  <AArch64Base.pins> one_instr
-
 
 %%
 main:
@@ -206,6 +206,7 @@ instr_option :
 |            { Nop }
 | NAME COLON instr_option {Label ($1,$3) }
 | CODEVAR    { Symbolic $1 }
+| DOTPAGEALIGN { Pagealign }
 | instr      { Instruction $1}
 
 reg:
@@ -691,6 +692,8 @@ instr:
 /* Memory */
 | LDR wxreg COMMA mem_ea
   { let (v,r)   = $2 and (ra,ext) = $4 in I_LDR (v,r,ra,ext) }
+| LDR creg COMMA mem_ea
+  { let (ra,ext) = $4 in I_LDR (V128,$2,ra,ext) }
 | LDRSW xreg COMMA mem_ea
   { let r = $2 and (ra,ext) = $4 in I_LDRSW (r,ra,ext) }
 | LDRSB reg COMMA mem_ea
@@ -759,6 +762,8 @@ instr:
   { I_LDARBH (H,AQ,$2,$5) }
 | STR wxreg COMMA mem_ea
   { let (v,r)   = $2 and (ra,ext) = $4 in I_STR (v,r,ra,ext) }
+| STR creg COMMA mem_ea
+  { let (ra,ext) = $4 in I_STR (V128,$2,ra,ext) }
 | STRB wreg COMMA mem_ea
   { let (ra,idx) = $4 in I_STRBH (B,$2,ra,idx) }
 | STRH wreg COMMA mem_ea
@@ -1056,7 +1061,7 @@ instr:
 | OP ARCH_ZDREG COMMA ARCH_ZDREG COMMA ARCH_ZDREG
   { I_OP3_SV ($1,$2,$4,$6) }
 | TOK_INDEX zreg COMMA wxreg COMMA k
-  { let v,r = $4 in 
+  { let v,r = $4 in
     I_INDEX_SI ($2,v,r,$6) }
 | TOK_INDEX zreg COMMA k COMMA wxreg
   { let v,r = $6 in
@@ -1295,6 +1300,11 @@ instr:
     {
       let r,idx = $4 in
       I_STG ($2,r,idx)
+    }
+| ST2G xreg COMMA mem_idx
+    {
+      let r,idx = $4 in
+      I_ST2G ($2,r,idx)
     }
 | STZG xreg COMMA mem_idx
     {

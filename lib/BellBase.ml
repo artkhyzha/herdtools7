@@ -197,6 +197,12 @@ let instruction_tr f = function
 type instruction = int kinstruction
 type parsedInstruction = MetaConst.k kinstruction
 
+let nop = Some Pnop
+and mk_imm_branch _ = None
+and is_nop = function
+  | Pnop -> true
+  | _ -> false
+
 let do_dump_instruction pk i = match i with
 | Pnop -> "nop"
 | Pld(r, addr_op, s) -> sprintf "r[%s] %s %s"
@@ -227,7 +233,7 @@ let do_dump_instruction pk i = match i with
 
 let dump_instruction i = do_dump_instruction (sprintf "%i") i
 
-let is_valid _ = true
+include InstrUtils.No(struct type instr = instruction end)
 
 include Pseudo.Make
     (struct
@@ -331,9 +337,6 @@ let map_regs f_reg f_symb =
   map_ins
 
 (* Seems to work for other architectures *)
-
-let norm_ins ins = ins
-
 
 let do_fold_addrs f =
  let fold_roa roa c = match roa with

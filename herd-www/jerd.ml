@@ -213,6 +213,7 @@ let run_herd bell cat litmus cfg =
     let variant = !variant
     let fault_handling = !Refs.fault_handling
     let mte_precision = !Refs.mte_precision
+    let mte_store_only = !Refs.mte_store_only
     let sve_vector_length = !Refs.sve_vector_length
     let sme_vector_length = !Refs.sme_vector_length
     let dumpallfaults = !dumpallfaults
@@ -321,7 +322,11 @@ let run_herd bell cat litmus cfg =
 
   let from_file =
     let module T =
-      ParseTest.Top (struct let bell_model_info = bi include Config end) in
+      ParseTest.Top
+        (struct
+          include GenParser.DefaultConfig
+          let bell_model_info = bi
+          include Config end) in
     T.from_file in
 
 

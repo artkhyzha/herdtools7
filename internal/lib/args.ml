@@ -36,6 +36,18 @@ let nohash b =
   "-nohash",Arg.Unit (fun () -> b := true),
   "do not check hashes"
 
+let checkobs b =
+  "-checkobs",Arg.Unit (fun () -> b := TestHerd.Obs),
+  "limit test validity to observation: Never/Sometimes/Always"
+
+let checkstates b =
+  "-checkstates",Arg.Unit (fun () -> b := TestHerd.Sta),
+  "limit test validity to final states"
+
+let verbose b =
+  "-verbose",Arg.Unit (fun () -> b := true),
+  "output a short diagnostic whenever a litmus test execution is complete"
+
 (** Validators. *)
 
 let validate check msg (key, spec, doc) =
@@ -54,8 +66,10 @@ let validate check msg (key, spec, doc) =
   in
   key, spec, doc
 
+let test_file name = Sys.file_exists name && not (Sys.is_directory name)
+
 let is_file =
-  validate (fun v -> Sys.file_exists v && not (Sys.is_directory v)) "Must be a path to a file"
+  validate test_file "Must be a path to a file"
 
 let is_dir =
   validate Sys.is_directory "Must be a path to a directory"

@@ -29,14 +29,13 @@ module type S = sig
       { loc : loc ; ord : int;
         (* TODO morello related value, fold into value *)
         tag : int ;
+        (* morello *)
         ctag : int; cseal : int; dep : int ;
         v   : v ; (* Value read or written *)
         (* TODO fold into value *)
         vecreg: v list list ; (* Alternative for SIMD *)
         (* Pte value *)
         pte : PteVal.t ;
-        (* TODO instruction fetch related value, fold into value *)
-        ins : int ;
         dir : dir option ;
         proc : Code.proc ;
         atom : atom option ;
@@ -170,7 +169,6 @@ module Make (O:Config) (E:Edge.S) :
         v   : v ;
         vecreg: v list list ;
         pte : PteVal.t ;
-        ins : int ;
         dir : dir option ;
         proc : Code.proc ;
         atom : atom option ;
@@ -188,7 +186,7 @@ module Make (O:Config) (E:Edge.S) :
     { loc=Code.loc_none ; ord=0; tag=0;
       ctag=0; cseal=0; dep=0;
       vecreg= [];
-      v=Code.no_value ; ins=0;dir=None; proc=(-1); atom=None; rmw=false;
+      v=Code.no_value ; dir=None; proc=(-1); atom=None; rmw=false;
       cell=[||]; tcell=[||];
       bank=Code.Ord; idx=(-1);
       pte=pte_default;
@@ -244,7 +242,7 @@ module Make (O:Config) (E:Edge.S) :
   let debug_val = Code.pp_v ~hexa:O.hexa
 
   let debug_vec v =
-    String.concat ", " (List.map debug_val (Array.to_list v))
+    String.concat ", " @@ List.map debug_val @@ Array.to_list v
 
   let debug_evt e =
     let pp_v =
@@ -290,8 +288,7 @@ module Make (O:Config) (E:Edge.S) :
     iter chan ns
   let debug_cycle chan n =
     let rec do_rec m =
-      debug_node chan m ;
-      output_char chan '\n' ;
+      fprintf chan "%a\n" debug_node m ;
       if m.next != n then do_rec m.next in
     do_rec n ;
     flush chan
@@ -318,13 +315,11 @@ let cons_cycle n c =
   c.prev <- n ;
   n
 
-let check_balance =
-  let rec do_rec r = function
-    | [] -> r = 0
-    | e::es ->
-        do_rec (match e.E.edge with E.Back _ -> r-1 | E.Leave _ -> r+1 | _ -> r) es in
-  do_rec 0
-
+let check_balance es =
+  let count = es
+    |> List.map (fun e -> match e.E.edge with E.Back _ -> -1 | E.Leave _ -> 1 | _ -> 0)
+    |> List.fold_left ( + ) 0 in
+  count = 0
 
 let build_cycle =
 
@@ -853,6 +848,8 @@ let set_same_loc st n0 =
 
 (* Set the values of write events *)
 
+  (* Split the cycle into segments, each contains
+     events for the same location *)
   let split_by_loc n =
     let rec do_rec m =
       let r =
@@ -914,11 +911,6 @@ let set_same_loc st n0 =
           let ctag = Code.value_to_int (CoSt.get_co st CapaTag) in
           let cseal = Code.value_to_int (CoSt.get_co st CapaSeal) in
           n.evt <- { n.evt with ord; ctag; cseal; }
-        end
-      else (* TODO why update the instruction *)
-        begin
-          let ins = Code.value_to_int (CoSt.get_co st Instr) in
-          n.evt <- { n.evt with ins; }
         end
  (*
           else if do_neon then (* set both fields, it cannot harm *)
@@ -1024,16 +1016,10 @@ let set_same_loc st n0 =
               ((!next_x_pred || next_x_ok), st)
             end (* END of match bank *)
           | Code _ ->
-            let ins = CoSt.get_co st Instr |> Code.value_to_int in
-            n.evt <- { n.evt with ins; check_value; } ;
+            n.evt <- { n.evt with check_value; } ;
             let bank = n.evt.bank in
             match bank with
             | Instr -> Warn.fatal "not letting instr write happen"
-            | Ord ->
-              let st = CoSt.next_co st bank in
-              let v = CoSt.get_co st bank in
-              n.evt <- { n.evt with ins = Code.value_to_int v;} ;
-              (next_x_ok, st)
             | _ -> (next_x_ok, st)
           end (* END of `Some W` *)
       | Some R |None -> (next_x_ok, st)
@@ -1042,8 +1028,8 @@ let set_same_loc st n0 =
 
   let set_all_write_val nss =
     let _,initvals =
-      List.fold_right
-        (fun ns (k,env as r) ->
+      List.fold_left
+        (fun (k,env as r) ns ->
           match ns with
           | [] -> r
           | n::_ ->
@@ -1065,7 +1051,7 @@ let set_same_loc st n0 =
                 k+8,(next_x,Code.value_of_int (k+4))::env
               else
                 k+4,env)
-        nss (0,[]) in
+        (0,[]) nss in
     initvals
 
   let set_write_v n =
@@ -1197,16 +1183,14 @@ let do_set_read_v init =
               (* Record the cell value in `st` in
                memory access to a non-instruction value *)
             if Code.is_data n.evt.loc then CoSt.set_cell st n.evt.cell
-            else CoSt.set_co st bank n.evt.ins
-          | Instr ->
-            if Code.is_data n.evt.loc then st
-            else CoSt.set_co st bank n.evt.ins
+            else st
+          | Instr -> st
           |Pte ->
             (* Record the pte value in `st` in
               memory access to a non-instruction pte value *)
             if Code.is_data n.evt.loc then
                 CoSt.set_pte_value st n.evt.pte
-            else CoSt.set_co st bank n.evt.ins in
+            else st in
         st
       | None ->
         st
@@ -1223,16 +1207,17 @@ let do_set_read_v init =
     (CoSt.get_cell final_st).(0),CoSt.get_pte_value final_st
 
   let set_read_v nss initvals =
-  List.fold_right
-    (fun ns k -> match ns with
-    | [] -> k
-    | n::_  ->
-        let init = List.assoc_opt (Code.as_data n.evt.loc) initvals
+  List.filter_map
+    (fun ns -> match ns with
+      | [] -> None
+      | n::_  ->
+        let init = if not (Code.is_data n.evt.loc) then 0
+                  else List.assoc_opt (Code.as_data n.evt.loc) initvals
                   |> Option.map Code.value_to_int
                   |> Option.value ~default:0 in
         let vf = do_set_read_v init ns in
-        (n.evt.loc,vf)::k)
-    nss []
+        Some (n.evt.loc,vf))
+  nss
 
 (* zyva... *)
 
@@ -1288,13 +1273,14 @@ let finish n =
     eprintf "READ VALUES\n" ;
     debug_cycle stderr n ;
     eprintf "FINAL VALUES [%s]\n"
-      (String.concat ","
-        (List.map
-          (fun (loc,(v,_pte)) -> sprintf "%s -> 0x%x"
-            (Code.pp_loc loc) (Code.value_to_int v)) vs))
+      (vs |> List.map
+        ( fun (loc,(v,_pte)) -> sprintf "%s -> 0x%x"
+          (Code.pp_loc loc) (Code.value_to_int v) )
+        |> String.concat "," )
   end ;
   if O.variant Variant_gen.Self then check_fetch n;
   initvals
+(* END of finish *)
 
 
 (* Re-extract edges, with irelevant directions solved *)
@@ -1436,17 +1422,14 @@ let merge_changes n nss =
     let k1,k2 = do_rec n in
     let nss = cons_not_nil k1 k2 in
     let nss = merge_changes n nss in
-    let rec num_rec k = function
-      | [] -> ()
-      | ns::nss ->
-          List.iter
-            (fun n ->
-              if n.store != nil then begin
-                n.store.evt <-  { n.store.evt with proc = k; }
-              end ;
-              n.evt <- { n.evt with proc = k; })
-            ns ;
-          num_rec (k+1) nss in
+    let num_rec k =
+      List.iteri (fun index ns ->
+        List.iter (fun n ->
+          if n.store != nil then
+            n.store.evt <-  { n.store.evt with proc = index + k; };
+          n.evt <- { n.evt with proc = index + k; }
+        ) ns
+      ) in
     num_rec 0 nss ;
     if
       not O.allow_back &&
@@ -1570,6 +1553,7 @@ let rec group_rec x ns = function
                     (List.map str_node ns)) ;
              (loc,ws)::k
           | _ ->
+              (* Assume there is no consecutive writes to the same location *)
               List.iter
                 (fun ns -> eprintf "[%a]\n" debug_nodes ns)
                 ws ;
